@@ -102,15 +102,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocking-network-stack"
+version = "0.1.0"
+source = "git+https://github.com/bjoernQ/blocking-network-stack.git?rev=b3ecefc222d8806edd221f266999ca339c52d34e#b3ecefc222d8806edd221f266999ca339c52d34e"
+dependencies = [
+ "embedded-io",
+ "heapless",
+ "log",
+ "smoltcp",
+]
+
+[[package]]
 name = "board"
 version = "0.1.0"
 dependencies = [
  "bleps",
+ "blocking-network-stack",
  "critical-section",
+ "ds323x",
  "embassy-net",
  "embedded-io",
  "esp-alloc",
  "esp-hal",
+ "esp-println",
  "esp-wifi",
  "heapless",
  "log",
@@ -218,6 +232,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95249b50c6c185bee49034bcb378a49dc2b5dff0be90ff6616d31d64febab05d"
 dependencies = [
  "litrs 0.4.1",
+]
+
+[[package]]
+name = "ds323x"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe0029db3520c604477b3155a860f7091e082df27210d63e9869e25dbd9eb0ca"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "rtcc",
 ]
 
 [[package]]
@@ -442,6 +466,17 @@ dependencies = [
 
 [[package]]
 name = "esp-build"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b94a4b8d74e7cc7baabcca5b2277b41877e039ad9cd49959d48ef94dac7eab4b"
+dependencies = [
+ "quote",
+ "syn 2.0.101",
+ "termcolor",
+]
+
+[[package]]
+name = "esp-build"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8aa1c8f9954c9506699cf1ca10a2adcc226ff10b6ae3cb9e875cf2c6a0b9a372"
@@ -484,7 +519,7 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "enumset",
- "esp-build",
+ "esp-build 0.2.0",
  "esp-config",
  "esp-hal-procmacros",
  "esp-metadata",
@@ -535,6 +570,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-println"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d9dd4fc40306450e432cdf104ab00c8f6bd5c4f6c77b76c5fc3024c0e2a535d"
+dependencies = [
+ "critical-section",
+ "esp-build 0.1.0",
+ "log",
+ "portable-atomic",
+]
+
+[[package]]
 name = "esp-riscv-rt"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -561,7 +608,7 @@ dependencies = [
  "embedded-io-async",
  "enumset",
  "esp-alloc",
- "esp-build",
+ "esp-build 0.2.0",
  "esp-config",
  "esp-hal",
  "esp-metadata",
@@ -1036,6 +1083,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtcc"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95973c3a0274adc4f3c5b70d2b5b85618d6de9559a6737d3293ecae9a2fc0839"
+dependencies = [
+ "chrono",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1104,6 +1160,7 @@ dependencies = [
  "byteorder",
  "cfg-if",
  "heapless",
+ "log",
  "managed",
 ]
 
