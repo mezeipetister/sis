@@ -1,12 +1,19 @@
 use core::convert::TryInto;
 use core::error;
 
+use ds3231::{
+    Config as DsConfig, InterruptControl, Ocillator, SquareWaveFrequency, TimeRepresentation,
+    DS3231,
+};
 use embedded_svc::http::client::Client;
 use embedded_svc::http::Method;
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use embedded_svc::{http::client::Client as HttpClient, io::Write, utils::io};
 use esp_idf_svc::hal::gpio::PinDriver;
-use esp_idf_svc::hal::prelude::Peripherals;
+use esp_idf_svc::hal::i2c::config::Config as I2cConfig;
+use esp_idf_svc::hal::i2c::I2cDriver;
+use esp_idf_svc::hal::peripherals;
+use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::Configuration as HttpClientConfiguration;
 use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::log::EspLogger;
@@ -59,6 +66,9 @@ fn main() -> anyhow::Result<()> {
     struct TimeApiResponse {
         datetime: String,
     }
+
+    let current_local_time = read_time_from_ds3231()?;
+    info!("Current local time: {current_local_time}");
 
     let current_time = fetch_current_time()?;
     info!("Current time from API: {current_time}");
@@ -121,4 +131,41 @@ fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()>
     info!("Wifi netif up");
 
     Ok(())
+}
+
+fn read_time_from_ds3231() -> anyhow::Result<chrono::NaiveDateTime> {
+    // Create configuration
+    let config = DsConfig {
+        time_representation: TimeRepresentation::TwentyFourHour,
+        square_wave_frequency: SquareWaveFrequency::Hz1,
+        interrupt_control: InterruptControl::SquareWave,
+        battery_backed_square_wave: false,
+        oscillator_enable: Ocillator::Enabled,
+    };
+
+    // Initialize peripherals
+    let mut peripherals = Peripherals::take()?;
+
+    // Initialize device with I2C
+    let i2c = I2cDriver::new(
+        peripherals.i2c0,
+        &mut peripherals.pins.gpio21,
+        &mut peripherals.pins.gpio22,
+        &I2cConfig {
+            ..Default::default()
+        },
+    )?;
+    let mut rtc = DS3231::new(i2c, 0x68);
+
+    // Configure the device
+    rtc.configure(&config);
+
+    // Get current date/time
+    let datetime = rtc.datetime().unwrap();
+
+    Ok(datetime.into())
+}
+
+fn bcd_to_decimal(bcd: u8) -> u8 {
+    ((bcd >> 4) * 10) + (bcd & 0x0F)
 }
