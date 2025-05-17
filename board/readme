@@ -1,1 +1,0 @@
-espflash flash --monitor --chip esp32 target/xtensa-esp32-none-elf/debug/board --no-stub

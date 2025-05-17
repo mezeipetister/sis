@@ -1,1 +1,0 @@
-espflash flash --monitor --chip esp32 target/xtensa-esp32-espidf/debug/toto --no-stub

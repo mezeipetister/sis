@@ -1,0 +1,12 @@
+# for permission denied
+sudo usermod -a -G dialout zumzum
+
+espflash flash --monitor --chip esp32 target/xtensa-esp32-espidf/debug/esp32 --no-stub
+
+Main loop:
+1. Init logger
+2. Init wifi
+3. Start wifi monitoring
+4. start ntp watcher
+5. init BoardController
+6. init WS controller

@@ -1,0 +1,39 @@
+name: sis
+services:
+  mongo:
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    networks:
+      - sis_network
+    ports:
+      - "27017:27017"
+    volumes:
+      - sis_data:/data/db
+
+  web_gui:
+    image: ghcr.io/mezeipetister/sis_web:latest
+    build:
+      context: ../web
+      dockerfile: Dockerfile.prod
+    restart: always
+    ports:
+      - "3200:3200"
+    env_file:
+      - ENV.list
+    networks:
+      - sis_network
+    depends_on:
+      mongo:
+        condition: service_started
+      core_service:
+        condition: service_started
+
+networks:
+  sis_network:
+    driver: bridge
+
+volumes:
+  sis_data:
