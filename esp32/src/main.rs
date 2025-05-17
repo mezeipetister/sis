@@ -53,13 +53,6 @@ struct SectorTask {
     duration_sec: i32,
 }
 
-enum Command {
-    SetWeeklySchedule { schedule: WeeklySchedule },
-    OpenZone { zone_id: i32 },
-    CloseZone { zone_id: i32 },
-    Stop,
-}
-
 #[derive(Serialize, Deserialize)]
 struct SectorAction {
     device_id: String,
@@ -68,12 +61,12 @@ struct SectorAction {
 }
 
 struct BoardController<'a> {
-    id: String,                                    // MAC address
-    schedule: Vec<Program>,                        // weekly schedule
-    program_runner: Option<JoinHandle<()>>,        // thread handle for running the program
-    ds3231: DS3231<I2cDriver<'a>>,                 // DS3231 instance
-    cmd_tx: crossbeam::channel::Sender<Command>,   // command tx
-    cmd_rx: crossbeam::channel::Receiver<Command>, // command rx
+    id: String,                                       // MAC address
+    schedule: Vec<Program>,                           // weekly schedule
+    program_runner: Option<JoinHandle<()>>,           // thread handle for running the program
+    ds3231: DS3231<I2cDriver<'a>>,                    // DS3231 instance
+    cmd_tx: crossbeam::channel::Sender<BoardEvent>,   // command tx
+    cmd_rx: crossbeam::channel::Receiver<BoardEvent>, // command rx
 }
 
 #[derive(Serialize, Deserialize)]
@@ -84,6 +77,40 @@ enum ServerAction {
     Stop,
 }
 
+struct Board {
+    id: String,
+    schedule_id: i32,
+    schedule: Vec<Program>,
+    current_program: Option<Program>,
+    current_zones: Option<()>,
+}
+
+#[derive(Serialize, Deserialize)]
+enum ServerCommand {
+    SetSchedule { id: i32, program_list: Vec<Program> },
+    StartProgram { id: String },
+    StartZone { zone_id: String, duration_sec: i32 },
+    Stop,
+}
+
+enum BoardEvent {
+    StartZones { zones: Vec<SectorAction> },
+    StopRequest,
+    StartProgram { program_id: String },
+    ProgramStarted { program_id: String },
+    NewScheduleArrived { schedule: WeeklySchedule },
+    DateTimeUpdated { time: NaiveDateTime },
+    WebsocketStatusChanged { status: bool },
+    WifiStatusChanged { status: bool },
+}
+
+// Set system time from NaiveDateTime
+// This function sets the system time using the provided NaiveDateTime.
+// It converts the NaiveDateTime to a timestamp (in seconds)
+// and creates a TimeVal struct to pass to the settimeofday function.
+// The function returns Ok(()) on success and Err(()) on failure.
+// The settimeofday function is an external C function that sets the system time.
+// It takes a pointer to a TimeVal struct and a pointer to a timezone struct (not used here).
 #[repr(C)]
 struct TimeVal {
     tv_sec: i64,
@@ -255,7 +282,7 @@ fn main() -> anyhow::Result<()> {
         esp_idf_sys::esp_tls_init_global_ca_store();
     }
 
-    let (s, r) = crossbeam::channel::unbounded::<Command>();
+    let (s, r) = crossbeam::channel::unbounded::<BoardEvent>();
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -351,6 +378,9 @@ fn main() -> anyhow::Result<()> {
     });
 
     connect_wifi(&mut wifi)?;
+
+    let mac = get_mac(&wifi)?;
+    info!("MAC Address: {}", mac);
 
     let _sntp = sntp::EspSntp::new_default()?;
     info!("SNTP initialized");
