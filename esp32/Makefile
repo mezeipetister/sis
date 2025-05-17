@@ -2,6 +2,7 @@
 
 # Default target
 build:
-	@echo "Running build command..."
-	@# Add your build command here
-	@echo "Build completed."
+	cargo build
+
+flash:
+	espflash flash --monitor --chip esp32 target/xtensa-esp32-espidf/debug/esp32 --no-stub

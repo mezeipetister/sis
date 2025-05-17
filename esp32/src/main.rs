@@ -348,35 +348,34 @@ fn main() -> anyhow::Result<()> {
         }
         relay_controller.open((1..=relay_controller.relays.len()).collect());
         thread::sleep(Duration::from_secs(1));
-        relay_controller.close_all();
     });
 
-    // connect_wifi(&mut wifi)?;
+    connect_wifi(&mut wifi)?;
 
-    // let _sntp = sntp::EspSntp::new_default()?;
-    // info!("SNTP initialized");
+    let _sntp = sntp::EspSntp::new_default()?;
+    info!("SNTP initialized");
 
-    // loop {
-    //     match _sntp.get_sync_status() {
-    //         SyncStatus::Completed => {
-    //             info!("SNTP synchronized");
-    //             let current_board_utc_time = Utc::now().naive_utc();
-    //             info!("Current UTC time on board: {current_board_utc_time}");
-    //             set_dtime_to_ds3231(&mut rtc, current_board_utc_time)?;
-    //             break;
-    //         }
-    //         SyncStatus::InProgress => {
-    //             info!("SNTP not synchronized");
-    //         }
-    //         SyncStatus::Reset => {
-    //             info!("SNTP reset");
-    //         }
-    //     }
-    //     thread::sleep(Duration::from_secs(1));
-    // }
+    loop {
+        match _sntp.get_sync_status() {
+            SyncStatus::Completed => {
+                info!("SNTP synchronized");
+                let current_board_utc_time = Utc::now().naive_utc();
+                info!("Current UTC time on board: {current_board_utc_time}");
+                set_dtime_to_ds3231(&mut rtc, current_board_utc_time)?;
+                break;
+            }
+            SyncStatus::InProgress => {
+                info!("SNTP not synchronized");
+            }
+            SyncStatus::Reset => {
+                info!("SNTP reset");
+            }
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
 
-    // let now = Utc::now().naive_utc();
-    // info!("Current UTC time from systime: {now}");
+    let now = Utc::now().naive_utc();
+    info!("Current UTC time from systime: {now}");
 
     // let current_time = demo_api_call()?;
     // info!("Current time from API: {current_time}");
