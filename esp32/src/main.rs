@@ -34,6 +34,7 @@ const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
 mod time;
+mod ws;
 
 #[derive(Serialize, Deserialize)]
 struct WeeklySchedule {
