@@ -33,6 +33,8 @@ use std::time::Duration;
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
+mod time;
+
 #[derive(Serialize, Deserialize)]
 struct WeeklySchedule {
     id: i32,
@@ -228,12 +230,16 @@ impl<P: Pin + Into<AnyIOPin>> RelayPin for PinDriver<'static, P, Output> {
 }
 
 pub struct Relay {
+    id: String,
     pin: Box<dyn RelayPin>,
 }
 
 impl Relay {
-    pub fn new<T: RelayPin + 'static>(pin: T) -> Self {
-        Relay { pin: Box::new(pin) }
+    pub fn new<T: RelayPin + 'static>(id: String, pin: T) -> Self {
+        Relay {
+            id,
+            pin: Box::new(pin),
+        }
     }
 
     pub fn open(&mut self) {
@@ -261,16 +267,14 @@ impl RelayController {
         info!("All relays closed");
     }
 
-    pub fn open(&mut self, indices: Vec<usize>) {
+    pub fn open(&mut self, ids: Vec<String>) {
         self.close_all();
-        for &i in &indices {
-            if i >= 1 && i <= self.relays.len() {
-                self.relays[i - 1].open();
-            } else {
-                panic!("Relay index {} out of bounds", i);
+        for relay in &mut self.relays {
+            if ids.contains(&relay.id) {
+                relay.open();
             }
         }
-        info!("Relays opened: {:?}", indices);
+        info!("Relays opened: {:?}", ids);
     }
 }
 
@@ -351,14 +355,37 @@ fn main() -> anyhow::Result<()> {
         thread::sleep(Duration::from_secs(1));
     });
 
+    let mac = get_mac(&wifi)?;
+
     let relay_pins: Vec<Relay> = vec![
-        Relay::new(PinDriver::output(peripherals.pins.gpio2)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio4)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio5)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio25)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio26)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio18)?),
-        Relay::new(PinDriver::output(peripherals.pins.gpio19)?),
+        Relay::new(
+            format!("{mac}/1"),
+            PinDriver::output(peripherals.pins.gpio2)?,
+        ),
+        Relay::new(
+            format!("{mac}/2"),
+            PinDriver::output(peripherals.pins.gpio4)?,
+        ),
+        Relay::new(
+            format!("{mac}/3"),
+            PinDriver::output(peripherals.pins.gpio5)?,
+        ),
+        Relay::new(
+            format!("{mac}/4"),
+            PinDriver::output(peripherals.pins.gpio25)?,
+        ),
+        Relay::new(
+            format!("{mac}/5"),
+            PinDriver::output(peripherals.pins.gpio26)?,
+        ),
+        Relay::new(
+            format!("{mac}/6"),
+            PinDriver::output(peripherals.pins.gpio18)?,
+        ),
+        Relay::new(
+            format!("{mac}/7"),
+            PinDriver::output(peripherals.pins.gpio19)?,
+        ),
     ];
 
     let mut relay_controller = RelayController::new(relay_pins);
@@ -370,10 +397,14 @@ fn main() -> anyhow::Result<()> {
         // led.set_low().unwrap();
         // thread::sleep(Duration::from_millis(500));
         for i in 1..=7 {
-            relay_controller.open(vec![i]);
+            relay_controller.open(vec![format!("{mac}/{i}")]);
             thread::sleep(Duration::from_secs(1));
         }
-        relay_controller.open((1..=relay_controller.relays.len()).collect());
+        relay_controller.open(
+            (1..=relay_controller.relays.len())
+                .map(|i| format!("{mac}/{i}"))
+                .collect(),
+        );
         thread::sleep(Duration::from_secs(1));
     });
 
