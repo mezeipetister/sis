@@ -2,19 +2,41 @@ use crossbeam::channel::Sender;
 use esp_idf_svc::{
     io::EspIOError,
     ws::client::{
-        EspWebSocketClient, EspWebSocketClientConfig, FrameType, WebSocketEvent, WebSocketEventType,
+        EspWebSocketClient, EspWebSocketClientConfig, WebSocketEvent, WebSocketEventType,
     },
 };
 use esp_idf_sys::EspError;
 use log::info;
 use std::time::Duration;
 
-fn connect_ws_with_token<'a>(
-    url: &'a str,
-    token: &'a str,
-) -> Result<EspWebSocketClient<'a>, EspError> {
-    let headers = format!("Authorization: Bearer {}\r\n", token);
+pub struct WsModule {
+    url: String,
+    token: String,
+}
 
+impl WsModule {
+    pub fn new(url: String, token: String) -> Self {
+        WsModule { url, token }
+    }
+
+    pub fn start(self) {
+        let client = connect_ws_with_token(&self.url, &self.token).unwrap();
+
+        std::thread::spawn(move || loop {
+            match client.is_connected() {
+                true => {
+                    info!("WebSocket client is connected");
+                }
+                false => {
+                    info!("WebSocket client is not connected");
+                }
+            }
+            std::thread::sleep(Duration::from_secs(5));
+        });
+    }
+}
+
+fn connect_ws_with_token(url: &str, token: &str) -> Result<EspWebSocketClient<'static>, EspError> {
     let headers = format!("Authorization: Bearer {}\r\n", token);
 
     // Connect websocket
@@ -23,15 +45,12 @@ fn connect_ws_with_token<'a>(
         ..Default::default()
     };
 
-    const ECHO_SERVER_URI: &str = "wss://echo.websocket.org";
-
     let timeout = Duration::from_secs(10);
     let (tx, rx) = crossbeam::channel::unbounded::<ExampleEvent>();
 
-    let mut client = EspWebSocketClient::new(ECHO_SERVER_URI, &config, timeout, move |event| {
-        handle_event(&tx, event)
-    })
-    .unwrap();
+    let mut client =
+        EspWebSocketClient::new(url, &config, timeout, move |event| handle_event(&tx, event))
+            .unwrap();
 
     Ok(client)
 }
