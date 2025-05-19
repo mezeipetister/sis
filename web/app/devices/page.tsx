@@ -10,6 +10,28 @@ type BoardInfo = {
 	zones: string[];
 };
 
+type ZoneInfo = {
+	id: string;
+	name: string;
+};
+
+type BoardDetails = {
+	device_id: string;
+	name: string;
+	datetime: string;
+	schedule_version: number;
+	running_program: string | null;
+	running_zones: ZoneAction | null;
+	zones: ZoneInfo[];
+};
+
+// If ZoneAction is not defined elsewhere, you may need to define it as well
+// Example placeholder:
+type ZoneAction = {
+	zone_ids: string[];
+	duration_seconds: number;
+};
+
 // Szerver komponens, szerver oldali fetch-csel
 async function getOnlineClients() {
 	const res = await fetch("http://192.168.88.30:3400/online_devices", {
@@ -22,8 +44,18 @@ async function getOnlineClients() {
 	return Array.isArray(data) ? data : data.clients || [];
 }
 
+async function getBoards(): Promise<BoardDetails[]> {
+	const res = await fetch("http://192.168.88.30:3400/boards", {
+		cache: "no-store",
+	});
+	if (!res.ok) return [];
+	const data = await res.json();
+	return Array.isArray(data) ? data : [];
+}
+
 export default async function Devices() {
 	const clients: BoardInfo[] = await getOnlineClients();
+	const boards: BoardDetails[] = await getBoards();
 
 	return (
 		<div>
@@ -61,18 +93,34 @@ export default async function Devices() {
 										</ul>
 									</td>
 									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-										<form action={async () => {
-											"use server";
-											await fetch(`/add_device?id=${encodeURIComponent(client.device_id)}`, {
-												method: "POST",
-											});
-										}}>
-											<button
-												type="submit"
-												className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded text-xs cursor-pointer"
-											>
-												Add
-											</button>
+										<form>
+											{boards.some((board) => board.device_id === client.device_id) ? (
+												<button
+													type="submit"
+													formAction={async () => {
+														"use server";
+														await fetch(`http://192.168.88.30:3400/boards/remove/${encodeURIComponent(client.device_id)}`, {
+															method: "POST",
+														});
+													}}
+													className="bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-2 rounded text-xs cursor-pointer"
+												>
+													Remove
+												</button>
+											) : (
+												<button
+													type="submit"
+													formAction={async () => {
+														"use server";
+														await fetch(`http://192.168.88.30:3400/boards/add/${encodeURIComponent(client.device_id)}`, {
+															method: "POST",
+														});
+													}}
+													className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded text-xs cursor-pointer"
+												>
+													Add
+												</button>
+											)}
 										</form>
 									</td>
 								</tr>
@@ -80,7 +128,8 @@ export default async function Devices() {
 						</tbody>
 					</table>
 				</div>
-			)}
-		</div>
+			)
+			}
+		</div >
 	);
 }
