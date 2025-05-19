@@ -1,4 +1,3 @@
-use chrono::NaiveTime;
 use crossbeam::{
     channel::{Receiver, Sender},
     select,
@@ -14,7 +13,6 @@ use esp_idf_svc::{
 };
 use esp_idf_sys::EspError;
 use log::info;
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::{BoardEvent, BoardInfo, ServerCommand};
@@ -40,7 +38,6 @@ impl WsModule {
         info!("WebSocket client connected");
 
         let mut boardinfo = BoardInfo::default();
-        boardinfo.device_id = "demodemo".to_string();
 
         let data = serde_json::to_string(&boardinfo).unwrap();
 

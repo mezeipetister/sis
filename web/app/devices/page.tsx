@@ -7,6 +7,7 @@ type BoardInfo = {
 		zone_ids: string[];
 		duration_seconds: number;
 	} | null;
+	zones: string[];
 };
 
 // Szerver komponens, szerver oldali fetch-csel
@@ -35,7 +36,7 @@ export default async function Devices() {
 						<thead className="bg-gray-50">
 							<tr>
 								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Device ID</th>
-								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase tracking-wider border-r border-b border-gray-300">Schedule Version</th>
+								<th className="px-4 py-2 text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Schedule Version</th>
 								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase tracking-wider border-b border-gray-300"></th>
 							</tr>
 						</thead>
@@ -55,7 +56,7 @@ export default async function Devices() {
 												type="submit"
 												className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded text-xs cursor-pointer"
 											>
-												Add Device
+												Add
 											</button>
 										</form>
 									</td>

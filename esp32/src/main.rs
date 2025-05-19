@@ -1,3 +1,4 @@
+use boardinfo::BoardInfo;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use core::convert::TryInto;
 use core::error;
@@ -33,6 +34,7 @@ use std::time::Duration;
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
+mod boardinfo;
 mod time;
 mod ws;
 
@@ -63,24 +65,6 @@ pub enum ServerCommand {
     Stop,
     StartZoneAction(ZoneAction),
     StartProgram(String),
-}
-
-#[derive(Serialize, Default)]
-pub struct BoardInfo {
-    device_id: String,
-    datetime: String,
-    schedule_version: i32,
-    running_program: Option<String>,
-    running_zones: Option<ZoneAction>,
-}
-
-struct BoardController<'a> {
-    id: String,                                       // MAC address
-    schedule: Vec<Program>,                           // weekly schedule
-    program_runner: Option<JoinHandle<()>>,           // thread handle for running the program
-    ds3231: DS3231<I2cDriver<'a>>,                    // DS3231 instance
-    cmd_tx: crossbeam::channel::Sender<BoardEvent>,   // command tx
-    cmd_rx: crossbeam::channel::Receiver<BoardEvent>, // command rx
 }
 
 #[derive(Debug, Clone)]
@@ -261,6 +245,10 @@ impl RelayController {
         }
         info!("Relays opened: {:?}", ids);
     }
+
+    pub fn get_zones(&self) -> Vec<String> {
+        self.relays.iter().map(|r| r.id.clone()).collect()
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -373,7 +361,11 @@ fn main() -> anyhow::Result<()> {
         ),
     ];
 
+    // RelayController initialization
     let mut relay_controller = RelayController::new(relay_pins);
+
+    // BoardInfo initialization
+    let mut boardinfo = BoardInfo::init(&wifi, &relay_controller, 0);
 
     // thread::spawn(move || loop {
     //     for i in 1..=7 {
@@ -432,7 +424,16 @@ fn main() -> anyhow::Result<()> {
     loop {
         match rx.recv() {
             Ok(event) => {
+                // Try to apply the event to the boardinfo
+                // and send the updated boardinfo to the WebSocket
+                if let Some(updated_boardinfo) = boardinfo.apply_event(&event) {
+                    ws_tx
+                        .send(ws::WsCommand::NewBoardInfo(updated_boardinfo))
+                        .unwrap();
+                }
+
                 info!("Received BoardEvent: {:?}", event);
+
                 match event {
                     BoardEvent::DateTimeUpdated { time } => {
                         info!("DateTime updated: {}", time);
@@ -446,13 +447,7 @@ fn main() -> anyhow::Result<()> {
                             ws_tx.send(ws::WsCommand::Connect).unwrap();
                         } else {
                             ws_tx
-                                .send(ws::WsCommand::NewBoardInfo(BoardInfo {
-                                    device_id: mac_address_str.clone(),
-                                    datetime: current_utc_time.to_string(),
-                                    schedule_version: 0,
-                                    running_program: None,
-                                    running_zones: None,
-                                }))
+                                .send(ws::WsCommand::NewBoardInfo(boardinfo.clone()))
                                 .unwrap();
                         }
                     }

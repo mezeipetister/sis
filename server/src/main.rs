@@ -37,6 +37,7 @@ pub struct BoardInfo {
     pub schedule_version: u32,
     pub running_program: Option<String>,
     pub running_zones: Option<ZoneAction>,
+    pub zones: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize)]
