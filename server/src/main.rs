@@ -11,6 +11,7 @@ use rocket::{get, routes};
 use rocket_ws as ws;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use ws::Message;
@@ -84,33 +85,41 @@ async fn websocket_handler(
     let online_devices = state.online_devices.clone();
     let rx = state.cmd_tx.subscribe();
     let mut cmd_stream = BroadcastStream::new(rx);
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(5));
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
             let mut device_id: Option<String> = None;
-            while let Some(message) = tokio_stream::StreamExt::next(&mut stream).await {
+            loop {
                 tokio::select! {
                     // Handle incoming WebSocket messages from client
                     msg = stream.next() => {
-                        if let Some(msg) = msg {
-                            let msg = msg?;
-                            if msg.is_text() {
-                                // Try to parse as BoardInfo
-                                if let Ok(board_info) = serde_json::from_str::<BoardInfo>(msg.to_text()?) {
-                                    info!("Received BoardInfo: {:?}", board_info);
-                                    let mut devices = online_devices.lock().await;
-                                    // Replace or insert BoardInfo by device_id
-                                    if let Some(existing) = devices.iter_mut().find(|b| b.device_id == board_info.device_id) {
-                                        *existing = board_info.clone();
-                                    } else {
-                                        devices.push(board_info.clone());
+                        match msg {
+                            Some(Ok(msg)) => {
+                                if msg.is_text() {
+                                    // Try to parse as BoardInfo
+                                    if let Ok(board_info) = serde_json::from_str::<BoardInfo>(msg.to_text()?) {
+                                        info!("Received BoardInfo: {:?}", board_info);
+                                        let mut devices = online_devices.lock().await;
+                                        // Replace or insert BoardInfo by device_id
+                                        if let Some(existing) = devices.iter_mut().find(|b| b.device_id == board_info.device_id) {
+                                            *existing = board_info.clone();
+                                        } else {
+                                            devices.push(board_info.clone());
+                                        }
+                                        device_id = Some(board_info.device_id.clone());
                                     }
-                                    device_id = Some(board_info.device_id.clone());
                                 }
+                                // Echo or handle other messages as needed
                             }
-                            // Echo or handle other messages as needed
-                        } else {
-                            break;
+                            Some(Err(e)) => {
+                                info!("WebSocket error: {:?}", e);
+                                break;
+                            }
+                            None => {
+                                // Client disconnected
+                                break;
+                            }
                         }
                     }
                     // Handle commands from server to client
@@ -121,8 +130,16 @@ async fn websocket_handler(
                             info!("Sent command to client: {:?}", cmd);
                         }
                     }
+                    _ = ping_interval.tick() => {
+                        if let Err(e) = stream.send(ws::Message::Ping(vec![])).await {
+                            info!("Ping failed: {:?}", e);
+                            break;
+                        }
+                    }
                 }
             }
+
+            info!("WebSocket connection closed");
 
             // Remove device from online_devices on disconnect
             if let Some(id) = device_id {
