@@ -11,12 +11,14 @@ type BoardInfo = {
 
 // Szerver komponens, szerver oldali fetch-csel
 async function getOnlineClients() {
-	const res = await fetch("http://localhost:3000/api/online-clients", {
+	const res = await fetch("http://192.168.88.30:3400/online_devices", {
 		cache: "no-store",
 	});
 	if (!res.ok) return [];
 	const data = await res.json();
-	return data.clients || [];
+	console.log("Fetched data:", data);
+	// Adjust this line based on the actual structure of the API response
+	return Array.isArray(data) ? data : data.clients || [];
 }
 
 export default async function Devices() {
@@ -24,38 +26,44 @@ export default async function Devices() {
 
 	return (
 		<div>
-			<h1>Devices</h1>
+			<h1 className="pb-5 text-2xl font-bold">Devices</h1>
 			{clients.length === 0 ? (
 				<p>No online devices.</p>
 			) : (
-				<table>
-					<thead>
-						<tr>
-							<th>Device ID</th>
-							<th>Date/Time</th>
-							<th>Schedule Version</th>
-							<th>Running Program</th>
-							<th>Running Zones</th>
-						</tr>
-					</thead>
-					<tbody>
-						{clients.map((client) => (
-							<tr key={client.device_id}>
-								<td>{client.device_id}</td>
-								<td>{client.datetime}</td>
-								<td>{client.schedule_version}</td>
-								<td>{client.running_program || "-"}</td>
-								<td>
-									{client.running_zones
-										? `${client.running_zones.zone_ids.join(
-											", "
-										)} (${client.running_zones.duration_seconds}s)`
-										: "-"}
-								</td>
+				<div className="overflow-x-auto">
+					<table className="divide-y divide-gray-200 bg-white shadow rounded-lg border border-gray-300">
+						<thead className="bg-gray-50">
+							<tr>
+								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Device ID</th>
+								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase tracking-wider border-r border-b border-gray-300">Schedule Version</th>
+								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase tracking-wider border-b border-gray-300"></th>
 							</tr>
-						))}
-					</tbody>
-				</table>
+						</thead>
+						<tbody className="divide-y divide-gray-200">
+							{clients.map((client) => (
+								<tr key={client.device_id} className="hover:bg-gray-100">
+									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-300">{client.device_id}</td>
+									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-300">{client.schedule_version}</td>
+									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+										<form action={async () => {
+											"use server";
+											await fetch(`/add_device?id=${encodeURIComponent(client.device_id)}`, {
+												method: "POST",
+											});
+										}}>
+											<button
+												type="submit"
+												className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded text-xs cursor-pointer"
+											>
+												Add Device
+											</button>
+										</form>
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
 			)}
 		</div>
 	);

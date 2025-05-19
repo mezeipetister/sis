@@ -134,7 +134,7 @@ async fn websocket_handler(
                         }
                     }
                     _ = ping_interval.tick() => {
-                        if last_pong_time.elapsed() > Duration::from_secs(10) {
+                        if last_pong_time.elapsed() > Duration::from_secs(5) {
                             info!("No pong received for 10s. Closing connection.");
                             break;
                         }
