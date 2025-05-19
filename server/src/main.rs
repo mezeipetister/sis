@@ -1,4 +1,5 @@
 use log::info;
+use mongodb::Collection;
 use mongodb::bson::{self, doc};
 use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome};
@@ -275,8 +276,15 @@ async fn add_board(state: &State<AppState>, device_id: String) -> Result<Status,
         .collection::<BoardDetails>("boards");
 
     // Check if the board already exists
+    // Try to update the board if it exists, otherwise insert
+    let filter = doc! { "device_id": &details.device_id };
+    let update = doc! {
+        "$set": bson::to_bson(&details).map_err(|_| Status::InternalServerError)?,
+    };
+
     collection
-        .insert_one(details)
+        .update_one(filter, update)
+        .upsert(true)
         .await
         .map_err(|_| Status::InternalServerError)?;
 
@@ -293,7 +301,7 @@ async fn remove_board(state: &State<AppState>, device_id: String) -> Result<(), 
         .collection::<BoardDetails>("boards");
     // Check if the board exists
     let res = collection
-        .delete_one(doc! { "device_id": &device_id })
+        .delete_many(doc! { "device_id": &device_id })
         .await
         .map_err(|_| Status::InternalServerError)?;
 
@@ -345,7 +353,7 @@ async fn main() {
 
     let (cmd_tx, cmd_rx) = broadcast::channel(32);
 
-    let mongo_client = mongodb::Client::with_uri_str("mongodb://mongo:27017")
+    let mongo_client = mongodb::Client::with_uri_str("mongodb://root:example@mongo:27017")
         .await
         .expect("Failed to initialize MongoDB client");
 
