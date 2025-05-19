@@ -391,23 +391,18 @@ fn main() -> anyhow::Result<()> {
 
     let mut relay_controller = RelayController::new(relay_pins);
 
-    thread::spawn(move || loop {
-        // let mut led = led_clone.lock().unwrap();
-        // led.set_high().unwrap();
-        // thread::sleep(Duration::from_millis(500));
-        // led.set_low().unwrap();
-        // thread::sleep(Duration::from_millis(500));
-        for i in 1..=7 {
-            relay_controller.open(vec![format!("{mac}/{i}")]);
-            thread::sleep(Duration::from_secs(1));
-        }
-        relay_controller.open(
-            (1..=relay_controller.relays.len())
-                .map(|i| format!("{mac}/{i}"))
-                .collect(),
-        );
-        thread::sleep(Duration::from_secs(1));
-    });
+    // thread::spawn(move || loop {
+    //     for i in 1..=7 {
+    //         relay_controller.open(vec![format!("{mac}/{i}")]);
+    //         thread::sleep(Duration::from_secs(1));
+    //     }
+    //     relay_controller.open(
+    //         (1..=relay_controller.relays.len())
+    //             .map(|i| format!("{mac}/{i}"))
+    //             .collect(),
+    //     );
+    //     thread::sleep(Duration::from_secs(1));
+    // });
 
     connect_wifi(&mut wifi)?;
 
@@ -438,6 +433,14 @@ fn main() -> anyhow::Result<()> {
 
     let now = Utc::now().naive_utc();
     info!("Current UTC time from systime: {now}");
+
+    let ws_module = ws::WsModule::new(
+        format!("ws://localhost:3200/api/websocket"),
+        "hellobello".to_string(),
+    );
+
+    ws_module.start();
+    info!("WebSocket client started");
 
     // let current_time = demo_api_call()?;
     // info!("Current time from API: {current_time}");

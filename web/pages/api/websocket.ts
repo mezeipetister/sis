@@ -1,29 +1,52 @@
 import {IncomingMessage} from 'http';
 import {MongoClient} from 'mongodb';
+import {NextApiRequest, NextApiResponse} from 'next';
 import {Duplex} from 'stream';
 import {WebSocket, WebSocketServer} from 'ws';
 
-type BoardStatusMessage = {
-  deviceId: string; status: string; datetime: string; programId: string;
+type BoardInfo = {
+  device_id: string; datetime: string;
+  schedule_version: number, running_program: String | null;
+  running_zones: ZoneAction | null
 };
 
 type ZoneAction = {
-  deviceId: string; relay_index: number; duration_seconds: number;
+  zone_ids: string[]; duration_seconds: number;
+}
+
+type Schedule = {
+  version: number; programs: Program[];
 }
 
 type Program = {
-  id: string; version: number, name: string; weekdays: number[];
-  startTime: string;
+  id: string; name: string; weekdays: number[]; start_time: string;
   zones: ZoneAction[];
 }
+
+export type ServerCommand =|{
+  type: 'SetNewSchedule';
+  data: Schedule
+}
+|{type: 'Stop'}|{
+  type: 'StartProgram';
+  data: string
+}
+|{
+  type: 'StartZoneAction';
+  data: ZoneAction
+};
 
 
 // Global variable to store WebSocket connections
 const subscribers: Set<WebSocket> = new Set<WebSocket>();
 
+// Map to store the latest BoardInfo for each online client (key: WebSocket,
+// value: BoardInfo)
+const online_clients: Map<WebSocket, BoardInfo> = new Map();
+
 // Function to broadcast messages to all connected WebSocket clients
-const push_schedule = (message: string) => {
-  console.log('Broadcasting message:', message);
+const push_schedule = (command: ServerCommand) => {
+  const message = JSON.stringify(command);
   for (const client of subscribers) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
@@ -34,21 +57,31 @@ const push_schedule = (message: string) => {
 // WebSocket server setup
 const websocketHandler = (req: any, res: any) => {
   if (res.socket.server.wss) {
-    console.log('WebSocket server already running');
     res.end();
     return;
   }
 
   const wss = new WebSocketServer({noServer: true});
 
-  res.socket.server.on(
-      'upgrade',
-      (request: IncomingMessage, socket: Duplex,
-       head: Buffer<ArrayBufferLike>) => {
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit('connection', ws, request);
-        });
-      });
+  // res.socket.server.on(
+  //     'upgrade',
+  //     (request: IncomingMessage, socket: Duplex,
+  //      head: Buffer<ArrayBufferLike>) => {
+  //       console.log('WebSocket server upgrade request');
+  //       // Token validation
+  //       const token = request.headers['auth_token'] || '';
+  //       const expectedToken = process.env.AUTH_TOKEN;
+  //       // Accept token as either a single string or array
+  //       const tokenStr = Array.isArray(token) ? token[0] : token;
+  //       if (!expectedToken || tokenStr !== expectedToken) {
+  //         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+  //         socket.destroy();
+  //         return;
+  //       }
+  //       wss.handleUpgrade(request, socket, head, (ws) => {
+  //         wss.emit('connection', ws, request);
+  //       });
+  //     });
 
   wss.on('connection', (ws) => {
     console.log('New WebSocket connection');
@@ -57,12 +90,14 @@ const websocketHandler = (req: any, res: any) => {
     ws.on('close', () => {
       console.log('WebSocket connection closed');
       subscribers.delete(ws);
+      online_clients.delete(ws);
     });
 
     ws.on('message', (message) => {
       try {
-        const parsedMessage: BoardStatusMessage =
-            JSON.parse(message.toString());
+        const parsedMessage: BoardInfo = JSON.parse(message.toString());
+        // Store/update the latest BoardInfo for this client
+        online_clients.set(ws, parsedMessage);
         console.log('Received message:', parsedMessage);
 
         const uri = `mongodb://${process.env.MONGODB_URI}`;
@@ -70,14 +105,15 @@ const websocketHandler = (req: any, res: any) => {
         const dbName = 'sis';
         const collectionName = 'board_status';
 
-        const upsertBoardStatus = async (message: BoardStatusMessage) => {
+        const upsertBoardStatus = async (message: BoardInfo) => {
           try {
             await client.connect();
             const db = client.db(dbName);
             const collection = db.collection(collectionName);
 
             await collection.updateOne(
-                {deviceId: message.deviceId}, {$set: message}, {upsert: true});
+                {device_id: message.device_id}, {$set: message},
+                {upsert: true});
 
             console.log('Board status upserted successfully');
           } catch (error) {
@@ -94,9 +130,23 @@ const websocketHandler = (req: any, res: any) => {
     });
   });
 
-  res.socket.server.wss = wss;
-  console.log('WebSocket server started');
-  res.end();
+  // Upgrade HTTP request to WebSocket connection
+  if (!res.writableEnded) {
+    res.writeHead(101, {
+      'Content-Type': 'text/plain',
+      'Connection': 'Upgrade',
+      'Upgrade': 'websocket'
+    });
+    res.end();
+  }
+
+  wss.handleUpgrade(req, req.socket, Buffer.alloc(0), function done(ws) {
+    wss.emit('connection', ws, req);
+  });
 };
 
-export {websocketHandler, subscribers};
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  websocketHandler(req, res);
+}
+
+export {websocketHandler, subscribers, push_schedule, online_clients};
