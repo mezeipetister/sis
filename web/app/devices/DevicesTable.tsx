@@ -39,7 +39,7 @@ export default function DevicesTable({ clients: onlineClients, boards }: Props) 
 
 	return (
 		<div>
-			{onlineClients.length === 0 ? (
+			{boards.length === 0 ? (
 				<p>No online devices.</p>
 			) : (
 				<div className="overflow-x-auto">
@@ -57,6 +57,11 @@ export default function DevicesTable({ clients: onlineClients, boards }: Props) 
 										<strong>Name:</strong> {client.name}
 										<br />
 										<strong>Device ID:</strong> {client.device_id}
+										<br />
+										<strong>Status:</strong>{" "}
+										<span className={onlineClients.some((c) => c.device_id === client.device_id) ? "text-green-600" : "text-red-600"}>
+											{onlineClients.some((c) => c.device_id === client.device_id) ? "Online" : "Offline"}
+										</span>
 										<br />
 										<strong>Schedule version:</strong> {client.schedule_version}
 										<br />

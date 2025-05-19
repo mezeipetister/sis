@@ -107,6 +107,8 @@ async fn websocket_handler(
     let mut ping_interval = tokio::time::interval(Duration::from_secs(2));
     let mut last_pong_time = std::time::Instant::now();
 
+    let client = state.mongo_client.clone();
+
     ws.channel(move |mut stream| {
         Box::pin(async move {
             let mut device_id: Option<String> = None;
@@ -128,6 +130,23 @@ async fn websocket_handler(
                                         } else {
                                             devices.push(board_info.clone());
                                         }
+                                        // Update the board's datetime and schedule_version in MongoDB if it exists
+                                        let collection = client
+                                            .database("sis")
+                                            .collection::<BoardDetails>("boards");
+                                        let filter = doc! { "device_id": &board_info.device_id };
+                                        let update = doc! {
+                                            "$set": {
+                                                "datetime": &board_info.datetime,
+                                                "schedule_version": board_info.schedule_version,
+                                                "running_program": bson::to_bson(&board_info.running_program).unwrap_or(bson::Bson::Null),
+                                                "running_zones": bson::to_bson(&board_info.running_zones).unwrap_or(bson::Bson::Null),
+                                            }
+                                        };
+                                        let _ = collection
+                                            .update_one(filter, update)
+                                            .await
+                                            .map_err(|e| info!("MongoDB update error: {:?}", e));
                                         device_id = Some(board_info.device_id.clone());
                                     }
 
