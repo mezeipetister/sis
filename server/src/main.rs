@@ -73,16 +73,17 @@ pub struct ZoneAction {
     pub duration_seconds: u32,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Program {
     pub id: String,
     pub name: String,
     pub weekdays: Vec<u8>,
+    pub active: bool,
     pub start_time: String,
     pub zones: Vec<ZoneAction>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Schedule {
     pub version: u32,
     pub programs: Vec<Program>,
@@ -363,6 +364,148 @@ async fn update_board(
     }
 }
 
+#[get("/schedule")]
+async fn get_schedule(state: &State<AppState>) -> Result<Json<Schedule>, Status> {
+    let collection = state
+        .mongo_client
+        .database("sis")
+        .collection::<Schedule>("schedule");
+    let doc = collection
+        .find_one(doc! {})
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+    match doc {
+        Some(schedule) => Ok(Json(schedule)),
+        None => Err(Status::NotFound),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ProgramInput {
+    id: String,
+    name: String,
+    weekdays: Vec<u8>,
+    active: bool,
+    start_time: String,
+    zones: Vec<ZoneAction>,
+}
+
+#[post("/schedule/program", data = "<program>")]
+async fn set_program(
+    state: &State<AppState>,
+    program: Json<ProgramInput>,
+) -> Result<Status, Status> {
+    let collection = state
+        .mongo_client
+        .database("sis")
+        .collection::<Schedule>("schedule");
+
+    // Get current schedule
+    let mut schedule = collection
+        .find_one(doc! {})
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .unwrap_or(Schedule {
+            version: 0,
+            programs: vec![],
+        });
+
+    // Find if program exists
+    let idx = schedule.programs.iter().position(|p| p.id == program.id);
+
+    let new_program = Program {
+        id: program.id.clone(),
+        name: program.name.clone(),
+        weekdays: program.weekdays.clone(),
+        active: program.active,
+        start_time: program.start_time.clone(),
+        zones: program.zones.clone(),
+    };
+
+    if let Some(i) = idx {
+        schedule.programs[i] = new_program;
+    } else {
+        schedule.programs.push(new_program);
+    }
+
+    schedule.version += 1;
+
+    // Upsert the schedule
+    collection
+        .update_one(
+            doc! {},
+            doc! { "$set": bson::to_bson(&schedule).map_err(|_| Status::InternalServerError)? },
+        )
+        .upsert(true)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    // Notify clients
+    let _ = state
+        .cmd_tx
+        .send(ServerCommand::SetNewSchedule(schedule))
+        .map_err(|_| Status::InternalServerError)?;
+
+    Ok(Status::Ok)
+}
+
+#[post("/schedule/program/<id>/enable")]
+async fn enable_program(state: &State<AppState>, id: String) -> Result<Status, Status> {
+    update_program_active(state, id, true).await
+}
+
+#[post("/schedule/program/<id>/disable")]
+async fn disable_program(state: &State<AppState>, id: String) -> Result<Status, Status> {
+    update_program_active(state, id, false).await
+}
+
+async fn update_program_active(
+    state: &State<AppState>,
+    id: String,
+    active: bool,
+) -> Result<Status, Status> {
+    let collection = state
+        .mongo_client
+        .database("sis")
+        .collection::<Schedule>("schedule");
+
+    let mut schedule = collection
+        .find_one(doc! {})
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+
+    let mut found = false;
+    for program in &mut schedule.programs {
+        if program.id == id {
+            program.active = active;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        return Err(Status::NotFound);
+    }
+
+    schedule.version += 1;
+
+    collection
+        .update_one(
+            doc! {},
+            doc! { "$set": bson::to_bson(&schedule).map_err(|_| Status::InternalServerError)? },
+        )
+        .upsert(true)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    let _ = state
+        .cmd_tx
+        .send(ServerCommand::SetNewSchedule(schedule))
+        .map_err(|_| Status::InternalServerError)?;
+
+    Ok(Status::Ok)
+}
+
 #[rocket::main]
 async fn main() {
     // Initialize the command channel
@@ -375,6 +518,27 @@ async fn main() {
     let mongo_client = mongodb::Client::with_uri_str("mongodb://root:example@mongo:27017")
         .await
         .expect("Failed to initialize MongoDB client");
+
+    let schedule_collection = mongo_client
+        .database("sis")
+        .collection::<Schedule>("schedule");
+
+    // Check if a schedule exists; if not, insert a default one
+    if schedule_collection
+        .count_documents(doc! {})
+        .await
+        .expect("Failed to count schedule documents")
+        == 0
+    {
+        let default_schedule = Schedule {
+            version: 1,
+            programs: vec![],
+        };
+        schedule_collection
+            .insert_one(default_schedule)
+            .await
+            .expect("Failed to insert default schedule");
+    }
 
     let state = AppState {
         cmd_tx,
@@ -395,6 +559,10 @@ async fn main() {
                 add_board,
                 remove_board,
                 update_board,
+                get_schedule,
+                set_program,
+                enable_program,
+                disable_program,
             ],
         )
         .launch()

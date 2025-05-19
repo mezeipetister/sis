@@ -50,6 +50,7 @@ pub struct Program {
     name: String,
     weekdays: Vec<i32>,
     start_time: NaiveTime,
+    active: bool,
     actions: Vec<ZoneAction>,
 }
 
