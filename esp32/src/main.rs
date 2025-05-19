@@ -435,7 +435,7 @@ fn main() -> anyhow::Result<()> {
     info!("Current UTC time from systime: {now}");
 
     let ws_module = ws::WsModule::new(
-        format!("ws://localhost:3400/websocket"),
+        format!("ws://192.168.88.30:3400/websocket"),
         "hellobello".to_string(),
     );
 

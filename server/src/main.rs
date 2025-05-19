@@ -97,6 +97,7 @@ async fn websocket_handler(
                             if msg.is_text() {
                                 // Try to parse as BoardInfo
                                 if let Ok(board_info) = serde_json::from_str::<BoardInfo>(msg.to_text()?) {
+                                    info!("Received BoardInfo: {:?}", board_info);
                                     let mut devices = online_devices.lock().await;
                                     // Replace or insert BoardInfo by device_id
                                     if let Some(existing) = devices.iter_mut().find(|b| b.device_id == board_info.device_id) {
