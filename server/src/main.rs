@@ -18,22 +18,10 @@ use ws::Message;
 
 #[derive(Debug, Serialize, Clone)]
 pub enum Command {
-    NewProgram(String),
-    StopProgram,
-    ZoneTest {
-        zone_id: u8,
-        duration_secs: u32,
-    },
-    WifiStatusChanged {
-        connected: bool,
-        ssid: Option<String>,
-    },
-    TimeUpdated {
-        utc_timestamp: i64,
-    },
-    Error(String),
-    StatusRequest,
-    Shutdown,
+    SetNewSchedule(Schedule),
+    Stop,
+    StartZoneAction(ZoneAction),
+    StartProgram(String),
 }
 
 struct AppState {
@@ -85,7 +73,8 @@ async fn websocket_handler(
     let online_devices = state.online_devices.clone();
     let rx = state.cmd_tx.subscribe();
     let mut cmd_stream = BroadcastStream::new(rx);
-    let mut ping_interval = tokio::time::interval(Duration::from_secs(5));
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(2));
+    let mut last_pong_time = std::time::Instant::now();
 
     ws.channel(move |mut stream| {
         Box::pin(async move {
@@ -96,9 +85,10 @@ async fn websocket_handler(
                     msg = stream.next() => {
                         match msg {
                             Some(Ok(msg)) => {
-                                if msg.is_text() {
-                                    // Try to parse as BoardInfo
-                                    if let Ok(board_info) = serde_json::from_str::<BoardInfo>(msg.to_text()?) {
+                                match msg {
+                                    ws::Message::Text(text) => {
+                                        // Try to parse as BoardInfo
+                                    if let Ok(board_info) = serde_json::from_str::<BoardInfo>(&text) {
                                         info!("Received BoardInfo: {:?}", board_info);
                                         let mut devices = online_devices.lock().await;
                                         // Replace or insert BoardInfo by device_id
@@ -109,6 +99,19 @@ async fn websocket_handler(
                                         }
                                         device_id = Some(board_info.device_id.clone());
                                     }
+
+                                    }
+                                    ws::Message::Binary(_) => {
+                                        info!("Received binary message from client");
+                                    }
+                                    ws::Message::Ping(_) => {
+                                        info!("Received ping from client");
+                                    }
+                                    ws::Message::Pong(_) => {
+                                        info!("Received pong from client");
+                                        last_pong_time = std::time::Instant::now();
+                                    }
+                                    _ => {}
                                 }
                                 // Echo or handle other messages as needed
                             }
@@ -131,9 +134,15 @@ async fn websocket_handler(
                         }
                     }
                     _ = ping_interval.tick() => {
+                        if last_pong_time.elapsed() > Duration::from_secs(10) {
+                            info!("No pong received for 10s. Closing connection.");
+                            break;
+                        }
                         if let Err(e) = stream.send(ws::Message::Ping(vec![])).await {
                             info!("Ping failed: {:?}", e);
                             break;
+                        } else {
+                            info!("Ping sent");
                         }
                     }
                 }
@@ -157,7 +166,7 @@ async fn websocket_handler(
 // that sends a stop command to the command channel
 #[get("/stop")]
 async fn stop_handler(state: &State<AppState>) -> Result<(), Status> {
-    let cmd = Command::StopProgram;
+    let cmd = Command::Stop;
     state
         .cmd_tx
         .send(cmd)

@@ -36,31 +36,42 @@ const PASSWORD: &str = env!("WIFI_PASS");
 mod time;
 mod ws;
 
-#[derive(Serialize, Deserialize)]
-struct WeeklySchedule {
-    id: i32,
-    schedule: Vec<Vec<Program>>,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ZoneAction {
+    zones: Vec<String>,
+    duration_seconds: i32,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Program {
-    weekdays: Vec<u8>,
-    start_time: chrono::NaiveTime,
-    sectors: Vec<SectorTask>,
+#[derive(Deserialize, Debug, Clone)]
+pub struct Program {
+    id: String,
+    name: String,
+    weekdays: Vec<i32>,
+    start_time: NaiveTime,
+    actions: Vec<ZoneAction>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SectorTask {
+#[derive(Deserialize, Debug, Clone)]
+pub struct Schedule {
+    version: i32,
+    program: Vec<Program>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum ServerCommand {
+    SetNewSchedule(Schedule),
+    Stop,
+    StartZoneAction(ZoneAction),
+    StartProgram(String),
+}
+
+#[derive(Serialize, Default)]
+pub struct BoardInfo {
     device_id: String,
-    sector_index: i32,
-    duration_sec: i32,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SectorAction {
-    device_id: String,
-    sector_index: i32,
-    duration_sec: i32,
+    datetime: String,
+    schedule_version: i32,
+    running_program: Option<String>,
+    running_zones: Option<ZoneAction>,
 }
 
 struct BoardController<'a> {
@@ -72,39 +83,12 @@ struct BoardController<'a> {
     cmd_rx: crossbeam::channel::Receiver<BoardEvent>, // command rx
 }
 
-#[derive(Serialize, Deserialize)]
-enum ServerAction {
-    SetProgram { program_list: Vec<Program> },
-    StartProgram { id: String },
-    StartSector { sector_id: i32, duration_sec: i32 },
-    Stop,
-}
-
-struct Board {
-    id: String,
-    schedule_id: i32,
-    schedule: Vec<Program>,
-    current_program: Option<Program>,
-    current_zones: Option<()>,
-}
-
-#[derive(Serialize, Deserialize)]
-enum ServerCommand {
-    SetSchedule { id: i32, program_list: Vec<Program> },
-    StartProgram { id: String },
-    StartZone { zone_id: String, duration_sec: i32 },
-    Stop,
-}
-
-enum BoardEvent {
-    StartZones { zones: Vec<SectorAction> },
-    StopRequest,
-    StartProgram { program_id: String },
-    ProgramStarted { program_id: String },
-    NewScheduleArrived { schedule: WeeklySchedule },
+#[derive(Debug, Clone)]
+pub enum BoardEvent {
     DateTimeUpdated { time: NaiveDateTime },
-    WebsocketStatusChanged { status: bool },
+    WsStatusChanged { connected: bool },
     WifiStatusChanged { status: bool },
+    ServerCommandArrived { command: ServerCommand },
 }
 
 // Set system time from NaiveDateTime
@@ -434,13 +418,80 @@ fn main() -> anyhow::Result<()> {
     let now = Utc::now().naive_utc();
     info!("Current UTC time from systime: {now}");
 
-    let ws_module = ws::WsModule::new(
+    let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
+
+    let (ws_module, ws_tx) = ws::WsModule::new(
         format!("ws://192.168.88.30:3400/websocket"),
         "hellobello".to_string(),
+        tx.clone(),
     );
 
     ws_module.start();
     info!("WebSocket client started");
+
+    loop {
+        match rx.recv() {
+            Ok(event) => {
+                info!("Received BoardEvent: {:?}", event);
+                match event {
+                    BoardEvent::DateTimeUpdated { time } => {
+                        info!("DateTime updated: {}", time);
+                        set_system_time_from_naive(time).ok();
+                        set_dtime_to_ds3231(&mut rtc, time).ok();
+                    }
+                    BoardEvent::WsStatusChanged { connected } => {
+                        info!("WebSocket status changed: connected={}", connected);
+                        // Send connect command if not connected to WS process
+                        if !connected {
+                            ws_tx.send(ws::WsCommand::Connect).unwrap();
+                        } else {
+                            ws_tx
+                                .send(ws::WsCommand::NewBoardInfo(BoardInfo {
+                                    device_id: mac_address_str.clone(),
+                                    datetime: current_utc_time.to_string(),
+                                    schedule_version: 0,
+                                    running_program: None,
+                                    running_zones: None,
+                                }))
+                                .unwrap();
+                        }
+                    }
+                    BoardEvent::WifiStatusChanged { status } => {
+                        info!("WiFi status changed: status={}", status);
+                    }
+                    BoardEvent::ServerCommandArrived { command } => {
+                        info!("Server command arrived: {:?}", command);
+                        match command {
+                            ServerCommand::SetNewSchedule(schedule) => {
+                                info!("New schedule received: version={}", schedule.version);
+                                // Update schedule here if needed
+                            }
+                            ServerCommand::Stop => {
+                                info!("Stop command received");
+                                relay_controller.close_all();
+                            }
+                            ServerCommand::StartZoneAction(zone_action) => {
+                                info!("StartZoneAction command received: {:?}", zone_action);
+                                relay_controller.open(zone_action.zones.clone());
+                                thread::sleep(Duration::from_secs(
+                                    zone_action.duration_seconds as u64,
+                                ));
+                                relay_controller.close_all();
+                            }
+                            ServerCommand::StartProgram(program_id) => {
+                                info!("StartProgram command received: {}", program_id);
+                                // Implement program start logic here
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                info!("Error receiving BoardEvent: {:?}", e);
+                break;
+            }
+        }
+    }
 
     // let current_time = demo_api_call()?;
     // info!("Current time from API: {current_time}");
@@ -451,32 +502,30 @@ fn main() -> anyhow::Result<()> {
 
     // info!("Shutting down in 5s...");
 
-    std::thread::sleep(core::time::Duration::from_secs(20));
-
     Ok(())
 }
 
-fn demo_api_call() -> anyhow::Result<String> {
-    info!("Fetching current time from API...");
+// fn demo_api_call() -> anyhow::Result<String> {
+//     info!("Fetching current time from API...");
 
-    let mut client = Client::wrap(EspHttpConnection::new(&HttpClientConfiguration {
-        use_global_ca_store: true, // ha az esp-idf build beállítás engedélyezi
-        crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
-        ..Default::default()
-    })?);
+//     let mut client = Client::wrap(EspHttpConnection::new(&HttpClientConfiguration {
+//         use_global_ca_store: true, // ha az esp-idf build beállítás engedélyezi
+//         crt_bundle_attach: Some(esp_idf_sys::esp_crt_bundle_attach),
+//         ..Default::default()
+//     })?);
 
-    let request = client.get("https://ipapi.co/8.8.8.8/json/")?;
+//     let request = client.get("https://ipapi.co/8.8.8.8/json/")?;
 
-    let mut response = request.submit()?;
+//     let mut response = request.submit()?;
 
-    info!("Response status: {}", response.status());
-    let mut buf = [0u8; 1024];
-    let bytes_read = io::try_read_full(&mut response, &mut buf).map_err(|e| e.0)?;
-    info!("Read {bytes_read} bytes");
-    match std::str::from_utf8(&buf[0..bytes_read]) {
-        Ok(body_string) => return Ok(body_string.to_string()),
-        Err(e) => {
-            return Err(anyhow::anyhow!("Error decoding response body: {e}"));
-        }
-    };
-}
+//     info!("Response status: {}", response.status());
+//     let mut buf = [0u8; 1024];
+//     let bytes_read = io::try_read_full(&mut response, &mut buf).map_err(|e| e.0)?;
+//     info!("Read {bytes_read} bytes");
+//     match std::str::from_utf8(&buf[0..bytes_read]) {
+//         Ok(body_string) => return Ok(body_string.to_string()),
+//         Err(e) => {
+//             return Err(anyhow::anyhow!("Error decoding response body: {e}"));
+//         }
+//     };
+// }

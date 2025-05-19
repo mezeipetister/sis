@@ -1,5 +1,8 @@
 use chrono::NaiveTime;
-use crossbeam::channel::Sender;
+use crossbeam::{
+    channel::{Receiver, Sender},
+    select,
+};
 use esp_idf_svc::{
     io::EspIOError,
     ws::{
@@ -14,18 +17,25 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use crate::{BoardEvent, BoardInfo, ServerCommand};
+
 pub struct WsModule {
     url: String,
     token: String,
+    tx: Sender<BoardEvent>,
+    rx: Receiver<WsCommand>,
 }
 
 impl WsModule {
-    pub fn new(url: String, token: String) -> Self {
-        WsModule { url, token }
+    pub fn new(url: String, token: String, tx: Sender<BoardEvent>) -> (Self, Sender<WsCommand>) {
+        let (module_tx, rx) = crossbeam::channel::unbounded::<WsCommand>();
+        (WsModule { url, token, tx, rx }, module_tx)
     }
 
+    /// Start the WebSocket client
+    /// bg loop
     pub fn start(self) {
-        let mut client = connect_ws_with_token(&self.url, &self.token).unwrap();
+        let mut client = connect_ws_with_token(&self.url, &self.token, self.tx).unwrap();
 
         info!("WebSocket client connected");
 
@@ -37,23 +47,50 @@ impl WsModule {
         info!("WebSocket client sent data: {}", data);
 
         std::thread::spawn(move || loop {
-            match client.is_connected() {
-                true => {
-                    info!("WebSocket client is connected");
-                    client
-                        .send(FrameType::Text(false), data.as_bytes())
-                        .unwrap();
+            select! {
+                recv(self.rx) -> msg => {
+                    match msg {
+                        Ok(cmd) => {
+                            match cmd {
+                                WsCommand::NewBoardInfo(new_info) => {
+                                    let data = serde_json::to_string(&new_info).unwrap();
+                                    if client.is_connected() {
+                                        info!("Sending updated BoardInfo: {}", data);
+                                    client
+                                        .send(FrameType::Text(false), data.as_bytes())
+                                        .unwrap();
+                                    } else {
+                                        info!("WebSocket client is not connected, cannot send BoardInfo");
+                                    }
+                                }
+                                WsCommand::Connect => {
+                                    // Optionally handle reconnect logic here
+                                    info!("Received Connect command");
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            info!("Command channel disconnected, exiting thread");
+                            break;
+                        }
+                    }
                 }
-                false => {
-                    info!("WebSocket client is not connected");
-                }
+                // default(Duration::from_secs(5)) => {
+                //     // Periodic check
+                //     if !client.is_connected() {
+                //         info!("WebSocket client is not connected, attempting to reconnect");
+                //     }
+                // }
             }
-            std::thread::sleep(Duration::from_secs(5));
         });
     }
 }
 
-fn connect_ws_with_token(url: &str, token: &str) -> Result<EspWebSocketClient<'static>, EspError> {
+fn connect_ws_with_token(
+    url: &str,
+    token: &str,
+    tx: Sender<BoardEvent>,
+) -> Result<EspWebSocketClient<'static>, EspError> {
     let headers = format!("auth_token: {}\r\n", token);
 
     // Connect websocket
@@ -63,7 +100,6 @@ fn connect_ws_with_token(url: &str, token: &str) -> Result<EspWebSocketClient<'s
     };
 
     let timeout = Duration::from_secs(10);
-    let (tx, rx) = crossbeam::channel::unbounded::<ExampleEvent>();
 
     let client =
         EspWebSocketClient::new(url, &config, timeout, move |event| handle_event(&tx, event))
@@ -72,52 +108,12 @@ fn connect_ws_with_token(url: &str, token: &str) -> Result<EspWebSocketClient<'s
     Ok(client)
 }
 
-#[derive(Serialize, Deserialize)]
-struct ZoneAction {
-    zones: Vec<String>,
-    duration_seconds: i32,
+pub enum WsCommand {
+    NewBoardInfo(BoardInfo),
+    Connect,
 }
 
-#[derive(Deserialize)]
-struct Program {
-    id: String,
-    name: String,
-    weekdays: Vec<i32>,
-    start_time: NaiveTime,
-    actions: Vec<ZoneAction>,
-}
-
-#[derive(Deserialize)]
-struct Schedule {
-    version: i32,
-    program: Vec<Program>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", content = "data")]
-enum ServerCommand {
-    SetNewSchedule(Schedule),
-    Stop,
-    StartProgram(String),
-    StartZoneAction(ZoneAction),
-}
-
-#[derive(Serialize, Default)]
-struct BoardInfo {
-    device_id: String,
-    datetime: String,
-    schedule_version: i32,
-    running_program: Option<String>,
-    running_zones: Option<ZoneAction>,
-}
-
-enum ExampleEvent {
-    Connected,
-    Closed,
-    MessageReceived,
-}
-
-fn handle_event(tx: &Sender<ExampleEvent>, event: &Result<WebSocketEvent, EspIOError>) {
+fn handle_event(tx: &Sender<BoardEvent>, event: &Result<WebSocketEvent, EspIOError>) {
     if let Ok(event) = event {
         match event.event_type {
             WebSocketEventType::BeforeConnect => {
@@ -125,23 +121,29 @@ fn handle_event(tx: &Sender<ExampleEvent>, event: &Result<WebSocketEvent, EspIOE
             }
             WebSocketEventType::Connected => {
                 info!("Websocket connected");
-                tx.send(ExampleEvent::Connected).ok();
+                tx.send(BoardEvent::WsStatusChanged { connected: true })
+                    .ok();
             }
             WebSocketEventType::Disconnected => {
                 info!("Websocket disconnected");
+                tx.send(BoardEvent::WsStatusChanged { connected: false })
+                    .ok();
             }
             WebSocketEventType::Close(reason) => {
                 info!("Websocket close, reason: {reason:?}");
+                tx.send(BoardEvent::WsStatusChanged { connected: false })
+                    .ok();
             }
             WebSocketEventType::Closed => {
                 info!("Websocket closed");
-                tx.send(ExampleEvent::Closed).ok();
+                tx.send(BoardEvent::WsStatusChanged { connected: false })
+                    .ok();
             }
             WebSocketEventType::Text(text) => {
                 info!("Websocket recv, text: {text}");
-                if text == "Hello, World!" {
-                    tx.send(ExampleEvent::MessageReceived).ok();
-                }
+                let command: ServerCommand = serde_json::from_str(&text).unwrap();
+                tx.send(BoardEvent::ServerCommandArrived { command: command })
+                    .ok();
             }
             WebSocketEventType::Binary(binary) => {
                 info!("Websocket recv, binary: {binary:?}");
