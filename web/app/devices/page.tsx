@@ -35,16 +35,31 @@ export default async function Devices() {
 					<table className="divide-y divide-gray-200 bg-white shadow rounded-lg border border-gray-300">
 						<thead className="bg-gray-50">
 							<tr>
-								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Device ID</th>
-								<th className="px-4 py-2 text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Schedule Version</th>
+								<th className="px-4 py-2 text-xs font-normal text-gray-500 uppercase border-r border-b border-gray-300">Device Info</th>
 								<th className="px-6 py-3 text-left text-xs font-normal text-gray-500 uppercase tracking-wider border-b border-gray-300"></th>
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-gray-200">
 							{clients.map((client) => (
 								<tr key={client.device_id} className="hover:bg-gray-100">
-									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-300">{client.device_id}</td>
-									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-300">{client.schedule_version}</td>
+									<td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-300 whitespace-pre-line break-words max-w-xs">
+										Device ID: {client.device_id}
+										<br />
+										Schedule version: {client.schedule_version}
+										<br />
+										Updated: {new Date(client.datetime).toLocaleString("hu-HU", { timeZone: "Europe/Budapest" })}
+										<br />
+										Running program: {client.running_program || "None"}
+										<br />
+										Running zones: {client.running_zones ? client.running_zones.zone_ids.join(", ") : "None"}
+										<br />
+										Available zones:
+										<ul className="list-disc list-inside">
+											{client.zones.map((zone) => (
+												<li key={zone}>{zone}</li>
+											))}
+										</ul>
+									</td>
 									<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
 										<form action={async () => {
 											"use server";
