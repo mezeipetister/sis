@@ -1,0 +1,4 @@
+[default]
+address = "127.0.0.1"
+port = 3400           # set to `false` to disable
+log_level = "debug"
