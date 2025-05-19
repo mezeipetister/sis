@@ -19,6 +19,8 @@ services:
       # args:
         # - SERVICE_NAME=login_service
     restart: always
+    ports:
+      - "3400:3400"
     env_file:
       - ENV.list
     networks:

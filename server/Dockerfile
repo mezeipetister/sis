@@ -18,7 +18,6 @@ ARG SERVICE_NAME
 WORKDIR /usr/src/server
 
 COPY Cargo.toml ./
-COPY Rocket.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # 5. Függőségek letöltése (ha a Cargo.lock nem változott, akkor cache-ből épül)
