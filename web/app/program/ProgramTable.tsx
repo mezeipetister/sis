@@ -1,10 +1,11 @@
 "use client";
 
-import { enableProgram, disableProgram, removeProgram } from "@/app/actions/schedule-actions";
+import { enableProgram, disableProgram, removeProgram, Program } from "@/app/actions/schedule-actions";
 import { useTransition, useState } from "react";
 import EditProgramModal from "./EditProgramModal";
+import { ZoneInfo } from "../actions/board-actions";
 
-export default function ProgramTable({ programs }: { programs: any[] }) {
+export default function ProgramTable({ programs, zones }: { programs: Program[], zones: ZoneInfo[] }) {
 	const [isPending, startTransition] = useTransition();
 	const [editing, setEditing] = useState<any | null>(null);
 
@@ -14,6 +15,7 @@ export default function ProgramTable({ programs }: { programs: any[] }) {
 				<thead className="bg-gray-100">
 					<tr>
 						<th className="px-4 py-2 text-left text-sm font-medium">Név</th>
+						<th className="px-4 py-2 text-left text-sm font-medium">Kezdés</th>
 						<th className="px-4 py-2 text-left text-sm font-medium">Napok</th>
 						<th className="px-4 py-2 text-left text-sm font-medium">Zónák</th>
 						<th className="px-4 py-2 text-left text-sm font-medium">Műveletek</th>
@@ -23,6 +25,7 @@ export default function ProgramTable({ programs }: { programs: any[] }) {
 					{programs.map((p) => (
 						<tr key={p.id} className="border-t">
 							<td className="px-4 py-2">{p.name}</td>
+							<td className="px-4 py-2">{p.start_time}</td>
 							<td className="px-4 py-2">
 								{p.weekdays
 									.map((d: number) =>
@@ -31,11 +34,17 @@ export default function ProgramTable({ programs }: { programs: any[] }) {
 									.join(", ")}
 							</td>
 							<td className="px-4 py-2">
-								{p.zones.map((z: any, i: number) => (
-									<div key={i}>
-										{z.zone_ids.join(", ")} ({z.duration_seconds}s)
-									</div>
-								))}
+								{p.zones.map((z: any, i: number) => {
+									const zoneNames = z.zone_ids
+										.map((id: number) => zones.find((zone) => String(zone.id) === String(id))?.name)
+										.filter(Boolean)
+										.join(", ");
+									return (
+										<div key={i}>
+											{zoneNames} ({Math.round(z.duration_seconds / 60)}m)
+										</div>
+									);
+								})}
 							</td>
 							<td className="px-4 py-2 space-x-2">
 								<button
@@ -81,7 +90,7 @@ export default function ProgramTable({ programs }: { programs: any[] }) {
 			</table>
 
 			{editing && (
-				<EditProgramModal program={editing} onClose={() => setEditing(null)} />
+				<EditProgramModal program={editing} zones={zones} onClose={() => setEditing(null)} />
 			)}
 		</>
 	);

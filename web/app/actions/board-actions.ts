@@ -66,11 +66,17 @@ export async function getOnlineClients(): Promise<BoardInfo[]> {
                                (data.clients as BoardInfo[]) || [];
 }
 
-export async function getBoards(): Promise<BoardDetails[]> {
+export async function getRegisteredBoards(): Promise<BoardDetails[]> {
   const res = await fetch('http://server:3400/devices', {
     cache: 'no-store',
   });
   if (!res.ok) return [];
   const data = await res.json();
   return Array.isArray(data) ? data : [];
+}
+
+export async function getZonesAll(): Promise<ZoneInfo[]> {
+  const boards = await getRegisteredBoards();
+  const zones = boards.flatMap((board) => board.zones);
+  return zones;
 }

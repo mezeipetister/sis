@@ -40,7 +40,7 @@ mod ws;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ZoneAction {
-    zones: Vec<String>,
+    zones_ids: Vec<String>,
     duration_seconds: i32,
 }
 
@@ -468,7 +468,7 @@ fn main() -> anyhow::Result<()> {
                             }
                             ServerCommand::StartZoneAction(zone_action) => {
                                 info!("StartZoneAction command received: {:?}", zone_action);
-                                relay_controller.open(zone_action.zones.clone());
+                                relay_controller.open(zone_action.zones_ids.clone());
                                 thread::sleep(Duration::from_secs(
                                     zone_action.duration_seconds as u64,
                                 ));

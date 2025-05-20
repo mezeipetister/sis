@@ -2,9 +2,11 @@
 import { fetchSchedule } from "@/app/actions/schedule-actions";
 import ProgramTable from "./ProgramTable";
 import NewProgramModal from "./NewProgramModal";
+import { getZonesAll } from "../actions/board-actions";
 
 export default async function ProgramPage() {
   const schedule = await fetchSchedule();
+  const zones = await getZonesAll();
 
   return (
     <div className="p-6">
@@ -13,7 +15,7 @@ export default async function ProgramPage() {
         <NewProgramModal />
       </div>
       {schedule?.programs?.length ? (
-        <ProgramTable programs={schedule.programs} />
+        <ProgramTable programs={schedule.programs} zones={zones} />
       ) : (
         <p>Nincs még program.</p>
       )}
