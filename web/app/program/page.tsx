@@ -8,6 +8,7 @@ export default async function ProgramPage() {
   const schedule = await fetchSchedule();
   const zones = await getZonesAll();
 
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">

@@ -18,7 +18,7 @@ export default function NewProgramModal() {
 
 	const handleSubmit = async () => {
 		await setProgram({
-			id: name.toLowerCase().replace(/\s+/g, "_"),
+			id: crypto.randomUUID(),
 			name,
 			start_time: startTime,
 			weekdays,

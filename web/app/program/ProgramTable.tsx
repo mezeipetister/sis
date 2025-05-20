@@ -1,6 +1,6 @@
 "use client";
 
-import { enableProgram, disableProgram, removeProgram, Program } from "@/app/actions/schedule-actions";
+import { enableProgram, disableProgram, removeProgram, Program, setProgram } from "@/app/actions/schedule-actions";
 import { useTransition, useState } from "react";
 import EditProgramModal from "./EditProgramModal";
 import { ZoneInfo } from "../actions/board-actions";
@@ -8,6 +8,14 @@ import { ZoneInfo } from "../actions/board-actions";
 export default function ProgramTable({ programs, zones }: { programs: Program[], zones: ZoneInfo[] }) {
 	const [isPending, startTransition] = useTransition();
 	const [editing, setEditing] = useState<any | null>(null);
+
+	const handleDuplicate = async (program: Program) => {
+		program.id = crypto.randomUUID();
+		await setProgram(program);
+		window.location.reload();
+	};
+
+	programs = [...programs].sort((a, b) => a.start_time.localeCompare(b.start_time));
 
 	return (
 		<>
@@ -52,6 +60,19 @@ export default function ProgramTable({ programs, zones }: { programs: Program[],
 									onClick={() => setEditing(p)}
 								>
 									Szerkesztés
+								</button>
+								<button
+									className="px-3 py-1 bg-blue-500 text-white rounded"
+									onClick={() => {
+										if (window.confirm("Biztosan másolni szeretnéd ezt a programot?")) {
+											const { ...rest } = p;
+											handleDuplicate({
+												...rest, name: `${p.name} (másolat)`
+											});
+										}
+									}}
+								>
+									Másolás
 								</button>
 								<button
 									className={`px-3 py-1 text-white rounded ${p.active ? "bg-gray-500" : "bg-green-600"}`}
