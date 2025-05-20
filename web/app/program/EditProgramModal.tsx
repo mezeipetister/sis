@@ -79,14 +79,14 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 				/>
 				<div className="mb-4">
 					<label className="block font-medium mb-1">Napok:</label>
-					{[0, 1, 2, 3, 4, 5, 6].map((d) => (
-						<button
+					{[1, 2, 3, 4, 5, 6, 7].map((d) => (
+						<span
 							key={d}
 							onClick={() => toggleWeekday(d)}
-							className={`px-2 py-1 border rounded mr-1 mb-1 ${weekdays.includes(d) ? "bg-blue-500 text-white" : "bg-white"}`}
+							className={`px-2 py-1 border rounded mr-1 mb-1 cursor-pointer select-none ${weekdays.includes(d) ? "bg-blue-500 text-white" : "bg-white"}`}
 						>
-							{"VHSCPPS"[d]}
-						</button>
+							{["Hé", "Ke", "Sze", "Csü", "Pé", "Sz", "Va"][d - 1]}
+						</span>
 					))}
 				</div>
 				<div className="mb-4">

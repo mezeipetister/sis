@@ -29,7 +29,7 @@ export default function ProgramTable({ programs, zones }: { programs: Program[],
 							<td className="px-4 py-2">
 								{p.weekdays
 									.map((d: number) =>
-										["Vasárnap", "Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat"][d]
+										["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"][d - 1]
 									)
 									.join(", ")}
 							</td>

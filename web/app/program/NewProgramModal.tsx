@@ -8,7 +8,7 @@ export default function NewProgramModal() {
 	const [name, setName] = useState("");
 	const [startTime, setStartTime] = useState("06:00");
 	const [weekdays, setWeekdays] = useState<number[]>([]);
-	const [zones, setZones] = useState([{ zone_ids: ["A"], duration_seconds: 300 }]);
+	const [zones, setZones] = useState([]);
 
 	const toggleWeekday = (day: number) => {
 		setWeekdays((prev) =>
