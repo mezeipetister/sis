@@ -25,6 +25,7 @@ use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 use esp_idf_sys::tzset;
 use log::info;
+use relay::{Relay, RelayController};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
@@ -35,6 +36,7 @@ const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
 mod boardinfo;
+mod relay;
 mod time;
 mod ws;
 
@@ -70,6 +72,11 @@ pub enum ServerCommand {
 
 #[derive(Debug, Clone)]
 pub enum BoardEvent {
+    ScheduleUpdated { schedule: Schedule },
+    ProgramStarted { program: Program },
+    ProgramStopped,
+    ZoneActionStarted { zone_action: ZoneAction },
+    ZoneActionStopped,
     DateTimeUpdated { time: NaiveDateTime },
     WsStatusChanged { connected: bool },
     WifiStatusChanged { status: bool },
@@ -183,74 +190,6 @@ fn set_dtime_to_ds3231(
 // fn bcd_to_decimal(bcd: u8) -> u8 {
 //     ((bcd >> 4) * 10) + (bcd & 0x0F)
 // }
-
-pub trait RelayPin: Send {
-    fn set_high(&mut self);
-    fn set_low(&mut self);
-}
-
-impl<P: Pin + Into<AnyIOPin>> RelayPin for PinDriver<'static, P, Output> {
-    fn set_high(&mut self) {
-        self.set_high().unwrap();
-    }
-
-    fn set_low(&mut self) {
-        self.set_low().unwrap();
-    }
-}
-
-pub struct Relay {
-    id: String,
-    pin: Box<dyn RelayPin>,
-}
-
-impl Relay {
-    pub fn new<T: RelayPin + 'static>(id: String, pin: T) -> Self {
-        Relay {
-            id,
-            pin: Box::new(pin),
-        }
-    }
-
-    pub fn open(&mut self) {
-        self.pin.set_high();
-    }
-
-    pub fn close(&mut self) {
-        self.pin.set_low();
-    }
-}
-
-pub struct RelayController {
-    relays: Vec<Relay>,
-}
-
-impl RelayController {
-    pub fn new(relays: Vec<Relay>) -> Self {
-        Self { relays }
-    }
-
-    pub fn close_all(&mut self) {
-        for relay in &mut self.relays {
-            relay.close();
-        }
-        info!("All relays closed");
-    }
-
-    pub fn open(&mut self, ids: Vec<String>) {
-        self.close_all();
-        for relay in &mut self.relays {
-            if ids.contains(&relay.id) {
-                relay.open();
-            }
-        }
-        info!("Relays opened: {:?}", ids);
-    }
-
-    pub fn get_zones(&self) -> Vec<String> {
-        self.relays.iter().map(|r| r.id.clone()).collect()
-    }
-}
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -413,14 +352,21 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
 
+    // Init WsModule
     let (ws_module, ws_tx) = ws::WsModule::new(
         format!("ws://192.168.88.30:3400/websocket"),
         "hellobello".to_string(),
         tx.clone(),
     );
 
+    // Start WebSocket module
     ws_module.start();
     info!("WebSocket client started");
+
+    // Init relay module
+    let (relay_module, relay_tx) = relay::RelayModule::new(relay_controller, tx.clone());
+    // Start relay module
+    relay_module.start();
 
     loop {
         match rx.recv() {
@@ -464,22 +410,27 @@ fn main() -> anyhow::Result<()> {
                             }
                             ServerCommand::Stop => {
                                 info!("Stop command received");
-                                relay_controller.close_all();
+                                relay_tx.send(relay::RelayCommand::Stop).unwrap();
                             }
                             ServerCommand::StartZoneAction(zone_action) => {
                                 info!("StartZoneAction command received: {:?}", zone_action);
-                                relay_controller.open(zone_action.zone_ids.clone());
-                                thread::sleep(Duration::from_secs(
-                                    zone_action.duration_seconds as u64,
-                                ));
-                                relay_controller.close_all();
+                                relay_tx
+                                    .send(relay::RelayCommand::StartZoneAction(zone_action.clone()))
+                                    .unwrap();
                             }
                             ServerCommand::StartProgram(program_id) => {
                                 info!("StartProgram command received: {}", program_id);
-                                // Implement program start logic here
+                                // relay_tx
+                                //     .send(relay::RelayCommand::StartProgram(program_id.clone()))
+                                //     .unwrap();
                             }
                         }
                     }
+                    BoardEvent::ScheduleUpdated { schedule } => (),
+                    BoardEvent::ProgramStarted { program } => (),
+                    BoardEvent::ProgramStopped => (),
+                    BoardEvent::ZoneActionStarted { zone_action } => (),
+                    BoardEvent::ZoneActionStopped => (),
                 }
             }
             Err(e) => {

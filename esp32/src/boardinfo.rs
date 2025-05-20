@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use serde::Serialize;
 
-use crate::{get_mac, BoardEvent, RelayController, ZoneAction};
+use crate::{get_mac, relay::RelayController, BoardEvent, ZoneAction};
 
 #[derive(Serialize, Default, Clone)]
 pub struct BoardInfo {
@@ -48,6 +48,37 @@ impl BoardInfo {
             BoardEvent::WsStatusChanged { connected: _ } => None,
             BoardEvent::WifiStatusChanged { status: _ } => None,
             BoardEvent::ServerCommandArrived { command: _ } => None,
+            // Board stored new schedule
+            // Update schedule version
+            BoardEvent::ScheduleUpdated { schedule } => {
+                self.schedule_version = schedule.version;
+                Some(self.clone())
+            }
+            // Board started a program
+            // Update running program
+            BoardEvent::ProgramStarted { program } => {
+                self.running_program = Some(program.id.clone());
+
+                Some(self.clone())
+            }
+            // Board stopped a program
+            // Update running program
+            BoardEvent::ProgramStopped => {
+                self.running_program = None;
+                Some(self.clone())
+            }
+            // Board started a zone action
+            // Update running zones
+            BoardEvent::ZoneActionStarted { zone_action } => {
+                self.running_zones = Some(zone_action.clone());
+                Some(self.clone())
+            }
+            // Board stopped a zone action
+            // Update running zones
+            BoardEvent::ZoneActionStopped => {
+                self.running_zones = None;
+                Some(self.clone())
+            }
         }
     }
 }
