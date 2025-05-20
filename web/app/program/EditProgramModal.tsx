@@ -16,11 +16,10 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 	const [startTime, setStartTime] = useState(program.start_time);
 	const [weekdays, setWeekdays] = useState<number[]>(program.weekdays);
 
-	const initialSelectedZones = zones
-		.filter((z) =>
-			program.zones.some((pz: any) => pz.zone_ids.includes(z.id))
-		)
-		.map((z) => ({ zone_ids: [z.id], duration_seconds: program.zones.find((pz: any) => pz.zone_ids.includes(z.id))?.duration_seconds || 300 }));
+	const initialSelectedZones = program.zones.map((pz: any) => ({
+		zone_ids: [...pz.zone_ids],
+		duration_seconds: pz.duration_seconds,
+	}));
 
 	const [selectedZones, setSelectedZones] = useState(initialSelectedZones);
 
@@ -86,13 +85,12 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 							onClick={() => toggleWeekday(d)}
 							className={`px-2 py-1 border rounded mr-1 mb-1 ${weekdays.includes(d) ? "bg-blue-500 text-white" : "bg-white"}`}
 						>
-							{"MTWTFSS"[d]}
+							{"VHSCPPS"[d]}
 						</button>
 					))}
 				</div>
 				<div className="mb-4">
 					<label className="block font-medium mb-1">Program zónái és időtartamuk (mp):</label>
-
 
 					<DragDropContext onDragEnd={handleDragEnd}>
 						<Droppable droppableId="zones-list">
@@ -113,7 +111,7 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 														{...provided.dragHandleProps}
 														className={`flex items-center gap-3 bg-white ${snapshot.isDragging ? "shadow-lg" : ""}`}
 													>
-														<span className="cursor-move  px-2 py-1 rounded">:::</span>
+														<span className="cursor-move px-2 py-1 rounded">:::</span>
 														<span className="min-w-[100px]">{zone?.name || sz.zone_ids[0]}</span>
 														<input
 															type="number"
