@@ -48,16 +48,16 @@ pub struct ZoneAction {
 pub struct Program {
     id: String,
     name: String,
-    weekdays: Vec<i32>,
+    weekdays: Vec<i8>,
     start_time: NaiveTime,
     active: bool,
-    actions: Vec<ZoneAction>,
+    zones: Vec<ZoneAction>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Schedule {
     version: i32,
-    program: Vec<Program>,
+    programs: Vec<Program>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

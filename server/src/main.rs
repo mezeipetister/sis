@@ -459,6 +459,44 @@ async fn disable_program(state: &State<AppState>, id: String) -> Result<Status, 
     update_program_active(state, id, false).await
 }
 
+#[post("/schedule/program/<id>/remove")]
+async fn remove_program(state: &State<AppState>, id: String) -> Result<Status, Status> {
+    let collection = state
+        .mongo_client
+        .database("sis")
+        .collection::<Schedule>("schedule");
+
+    // Get current schedule
+    let mut schedule = collection
+        .find_one(doc! {})
+        .await
+        .map_err(|_| Status::InternalServerError)?
+        .ok_or(Status::NotFound)?;
+
+    // Remove the program by id
+    schedule.programs.retain(|p| p.id != id);
+
+    schedule.version += 1;
+
+    // Upsert the schedule
+    collection
+        .update_one(
+            doc! {},
+            doc! { "$set": bson::to_bson(&schedule).map_err(|_| Status::InternalServerError)? },
+        )
+        .upsert(true)
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    // Notify clients
+    let _ = state
+        .cmd_tx
+        .send(ServerCommand::SetNewSchedule(schedule))
+        .map_err(|_| Status::InternalServerError)?;
+
+    Ok(Status::Ok)
+}
+
 async fn update_program_active(
     state: &State<AppState>,
     id: String,
@@ -563,6 +601,7 @@ async fn main() {
                 set_program,
                 enable_program,
                 disable_program,
+                remove_program,
             ],
         )
         .launch()

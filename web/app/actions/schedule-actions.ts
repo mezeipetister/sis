@@ -45,3 +45,10 @@ export async function disableProgram(id: string): Promise<boolean> {
   });
   return res.ok;
 }
+
+export async function removeProgram(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/schedule/program/${id}/remove`, {
+    method: 'POST',
+  });
+  return res.ok;
+}
