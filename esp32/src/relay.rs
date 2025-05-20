@@ -135,7 +135,7 @@ impl RelayModule {
                             self.tx.send(BoardEvent::ZoneActionStarted { zone_action: zone.clone() }).ok();
                             self.relay_controller.open(zone.zone_ids.clone());
                             zone_start_time = Some(Instant::now());
-                            current_zone_index = None;
+                            current_zone_index = Some(0);
                             current_program = Some(Program {
                                 id: "single".into(),
                                 name: "Ad-hoc".into(),
