@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { setProgram } from "@/app/actions/schedule-actions";
+import { Program, setProgram } from "@/app/actions/schedule-actions";
 import { ZoneInfo } from "../actions/board-actions";
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 
 type Props = {
-	program: any;
+	program: Program;
 	zones: ZoneInfo[];
 	onClose: () => void;
 };
@@ -53,6 +54,14 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 		location.reload();
 	};
 
+	const handleDragEnd = (result: DropResult) => {
+		if (!result.destination) return;
+		const reordered = Array.from(selectedZones);
+		const [removed] = reordered.splice(result.source.index, 1);
+		reordered.splice(result.destination.index, 0, removed);
+		setSelectedZones(reordered);
+	};
+
 	return (
 		<div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
 			<div className="bg-white p-6 rounded shadow max-w-md w-full">
@@ -82,7 +91,60 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 					))}
 				</div>
 				<div className="mb-4">
-					<label className="block font-medium mb-1">Zónák:</label>
+					<label className="block font-medium mb-1">Program zónái és időtartamuk (mp):</label>
+
+
+					<DragDropContext onDragEnd={handleDragEnd}>
+						<Droppable droppableId="zones-list">
+							{(provided) => (
+								<div
+									className="flex flex-col gap-2"
+									ref={provided.innerRef}
+									{...provided.droppableProps}
+								>
+									{selectedZones.map((sz, idx) => {
+										const zone = zones.find((z) => sz.zone_ids.includes(z.id));
+										return (
+											<Draggable key={sz.zone_ids[0]} draggableId={sz.zone_ids[0]} index={idx}>
+												{(provided, snapshot) => (
+													<div
+														ref={provided.innerRef}
+														{...provided.draggableProps}
+														{...provided.dragHandleProps}
+														className={`flex items-center gap-3 bg-white ${snapshot.isDragging ? "shadow-lg" : ""}`}
+													>
+														<span className="cursor-move  px-2 py-1 rounded">:::</span>
+														<span className="min-w-[100px]">{zone?.name || sz.zone_ids[0]}</span>
+														<input
+															type="number"
+															min={1}
+															className="border px-2 py-1 w-24"
+															value={Math.floor(sz.duration_seconds / 60)}
+															onChange={(e) => {
+																const value = Number(e.target.value);
+																setSelectedZones((prev) =>
+																	prev.map((z, i) =>
+																		i === idx
+																			? { ...z, duration_seconds: value * 60 }
+																			: z
+																	)
+																);
+															}}
+														/>
+														<span>perc</span>
+													</div>
+												)}
+											</Draggable>
+										);
+									})}
+									{provided.placeholder}
+								</div>
+							)}
+						</Droppable>
+					</DragDropContext>
+				</div>
+				<div className="mb-4">
+					<label className="block font-medium mb-1">Kiválasztott zónák:</label>
 					<div className="flex flex-col gap-1">
 						{zones.map((zone) => (
 							<label key={zone.id} className="flex items-center gap-2">
