@@ -14,6 +14,16 @@ export type Schedule = {
   version: number; programs: Program[];
 };
 
+export type ClientCommand =|{
+  type: 'StartProgram';
+  program_id: string
+}
+|{
+  type: 'StartZoneAction';
+  zone_action: ZoneAction
+}
+|{type: 'Stop'};
+
 // API base URL
 const API_BASE = 'http://server:3400';
 
@@ -49,6 +59,16 @@ export async function disableProgram(id: string): Promise<boolean> {
 export async function removeProgram(id: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/schedule/program/${id}/remove`, {
     method: 'POST',
+  });
+  return res.ok;
+}
+
+export async function sendClientCommand(command: ClientCommand):
+    Promise<boolean> {
+  const res = await fetch(`${API_BASE}/run_command`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(command),
   });
   return res.ok;
 }

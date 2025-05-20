@@ -27,9 +27,10 @@ pub enum ServerCommand {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
 enum ClientCommand {
-    StartProgram(String),
-    StartZoneAction(ZoneAction),
+    StartProgram { program_id: String },
+    StartZoneAction { zone_action: ZoneAction },
     Stop,
 }
 
@@ -227,8 +228,10 @@ async fn run_command_handler(
 ) -> Result<(), Status> {
     // Convert the incoming command to ServerCommand
     let cmd = match cmd.into_inner() {
-        ClientCommand::StartProgram(program_id) => ServerCommand::StartProgram(program_id),
-        ClientCommand::StartZoneAction(zone_action) => ServerCommand::StartZoneAction(zone_action),
+        ClientCommand::StartProgram { program_id } => ServerCommand::StartProgram(program_id),
+        ClientCommand::StartZoneAction { zone_action } => {
+            ServerCommand::StartZoneAction(zone_action)
+        }
         ClientCommand::Stop => ServerCommand::Stop,
     };
     // Send the command to the command channel
