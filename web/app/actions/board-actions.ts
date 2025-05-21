@@ -5,6 +5,7 @@ export type BoardInfo = {
   running_program: string | null;
   running_zones: {zone_ids: string[]; duration_seconds: number;} | null;
   zones: string[];
+  log: string | null;
 };
 
 export type ZoneInfo = {

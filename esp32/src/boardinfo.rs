@@ -16,6 +16,7 @@ pub struct BoardInfo {
     running_program: Option<String>,
     running_zones: Option<ZoneAction>,
     zones: Vec<String>,
+    log: Option<String>,
 }
 
 impl BoardInfo {
@@ -38,6 +39,7 @@ impl BoardInfo {
             running_program: None,
             running_zones: None,
             zones,
+            log: None,
         }
     }
 
@@ -47,6 +49,10 @@ impl BoardInfo {
         match event {
             BoardEvent::DateTimeUpdated { time } => {
                 self.datetime = Utc.from_utc_datetime(time).to_rfc3339();
+                self.log = Some(format!(
+                    "DateTime updated to {}",
+                    Utc.from_utc_datetime(time).to_rfc3339()
+                ));
                 Some(self.clone())
             }
             BoardEvent::WsStatusChanged { connected: _ } => None,
@@ -57,6 +63,7 @@ impl BoardInfo {
             BoardEvent::ScheduleUpdated { version } => {
                 if self.schedule_version != *version {
                     self.schedule_version = *version;
+                    self.log = Some(format!("Schedule updated to version {}", version));
                     Some(self.clone()) // új állapot, küldeni kell
                 } else {
                     None // nincs változás, ne küldjük újra
@@ -67,6 +74,7 @@ impl BoardInfo {
             BoardEvent::ScheduleLoaded { version } => {
                 if self.schedule_version != *version {
                     self.schedule_version = *version;
+                    self.log = Some(format!("Schedule loaded from NVR to version {}", version));
                     Some(self.clone()) // új állapot, küldeni kell
                 } else {
                     None // nincs változás, ne küldjük újra
@@ -77,25 +85,36 @@ impl BoardInfo {
             // Update running program
             BoardEvent::ProgramRunning { program } => {
                 self.running_program = Some(program.id.clone());
-
+                self.log = Some(format!("Program started: {}", program.name));
                 Some(self.clone())
             }
             // Board stopped a program
             // Update running program
             BoardEvent::ProgramStopped => {
                 self.running_program = None;
+                self.log = Some("Program stopped".to_string());
                 Some(self.clone())
             }
             // Board started a zone action
             // Update running zones
             BoardEvent::ZoneActionStarted { zone_action } => {
                 self.running_zones = Some(zone_action.clone());
+                self.log = Some(format!(
+                    "Zone action started: {}",
+                    zone_action
+                        .zone_ids
+                        .iter()
+                        .map(|z| z.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ));
                 Some(self.clone())
             }
             // Board stopped a zone action
             // Update running zones
             BoardEvent::ZoneActionStopped => {
                 self.running_zones = None;
+                self.log = Some("Zone action stopped".to_string());
                 Some(self.clone())
             }
         }

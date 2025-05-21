@@ -1,3 +1,4 @@
+use chrono::Utc;
 use log::info;
 use mongodb::Collection;
 use mongodb::bson::{self, doc};
@@ -49,6 +50,7 @@ pub struct BoardInfo {
     pub running_program: Option<String>,
     pub running_zones: Option<ZoneAction>,
     pub zones: Vec<String>,
+    pub log: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -88,6 +90,13 @@ pub struct Program {
 pub struct Schedule {
     pub version: u32,
     pub programs: Vec<Program>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LogEvent {
+    pub device_id: String,
+    pub datetime: String,
+    pub log: String,
 }
 
 struct AuthToken;
@@ -161,6 +170,19 @@ async fn websocket_handler(
                                             .update_one(filter, update)
                                             .await
                                             .map_err(|e| info!("MongoDB update error: {:?}", e));
+
+                                        // if let Some(log_msg) = &board_info.log {
+                                        //     let logs_collection = client
+                                        //         .database("sis")
+                                        //         .collection::<mongodb::bson::Document>("logs");
+                                        //     let log_doc = doc! {
+                                        //         "device_id": board_info.device_id.clone(),
+                                        //         "datetime": Utc::now().to_rfc3339(),
+                                        //         "log": log_msg.clone(),
+                                        //     };
+                                        //     let _ = logs_collection.insert_one(log_doc).await;
+                                        // }
+
                                         device_id = Some(board_info.device_id.clone());
                                     }
 
