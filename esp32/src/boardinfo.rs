@@ -1,5 +1,8 @@
 use chrono::{TimeZone, Utc};
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::{
+    nvs::{EspNvs, EspNvsPartition, NvsDefault},
+    wifi::{BlockingWifi, EspWifi},
+};
 use log::info;
 use serde::Serialize;
 
@@ -52,6 +55,16 @@ impl BoardInfo {
             // Board stored new schedule
             // Update schedule version
             BoardEvent::ScheduleUpdated { version } => {
+                if self.schedule_version != *version {
+                    self.schedule_version = *version;
+                    Some(self.clone()) // új állapot, küldeni kell
+                } else {
+                    None // nincs változás, ne küldjük újra
+                }
+            }
+            // Board has just started
+            // Update schedule version based on the nvr stored schedule
+            BoardEvent::ScheduleLoaded { version } => {
                 if self.schedule_version != *version {
                     self.schedule_version = *version;
                     Some(self.clone()) // új állapot, küldeni kell

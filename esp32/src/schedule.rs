@@ -3,7 +3,7 @@ use chrono::{Datelike, Local, NaiveDateTime, Utc};
 use crossbeam::channel::{self, Receiver, Sender};
 use crossbeam::select;
 use esp_idf_svc::hal::ledc::LedcChannel;
-use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
+use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, EspNvsPartition, NvsDefault};
 use log::info;
 use std::thread;
 use std::time::Duration;
@@ -24,14 +24,16 @@ pub struct ScheduleModule {
 }
 
 impl ScheduleModule {
-    pub fn new(tx: Sender<BoardEvent>) -> (Self, Sender<ScheduleCommand>) {
+    pub fn new(
+        tx: Sender<BoardEvent>,
+        esp_partition: EspNvsPartition<NvsDefault>,
+    ) -> (Self, Sender<ScheduleCommand>) {
         let (cmd_tx, rx) = channel::unbounded();
 
         let next_program_opt = None;
         let wait_duration = Duration::from_secs(0);
 
-        let default = EspDefaultNvsPartition::take().unwrap();
-        let mut nvs = EspNvs::new(default, "storage", true).unwrap();
+        let nvs = EspNvs::new(esp_partition, "storage", true).unwrap();
 
         let mut res = Self {
             rx,
@@ -43,6 +45,16 @@ impl ScheduleModule {
         };
 
         res.load_schedule_from_nvs().unwrap();
+
+        if let Some(schedule) = &res.schedule {
+            res.tx
+                .send(BoardEvent::ScheduleLoaded {
+                    version: schedule.version,
+                })
+                .ok();
+        } else {
+            info!("No schedule found in NVS.");
+        }
 
         // Set the initial the next program
         res.set_next_program();

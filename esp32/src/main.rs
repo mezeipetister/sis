@@ -18,6 +18,7 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::http::client::Configuration as HttpClientConfiguration;
 use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::log::EspLogger;
+use esp_idf_svc::nvs::EspNvs;
 use esp_idf_svc::sntp::{self, SyncStatus};
 use esp_idf_svc::systime::EspSystemTime;
 use esp_idf_svc::tls::{Config, EspTls};
@@ -74,6 +75,7 @@ pub enum ServerCommand {
 #[derive(Debug, Clone)]
 pub enum BoardEvent {
     ScheduleUpdated { version: i32 },
+    ScheduleLoaded { version: i32 },
     ProgramStarted { program: Program },
     ProgramRunning { program: Program },
     ProgramStopped,
@@ -205,10 +207,13 @@ fn main() -> anyhow::Result<()> {
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
-    // let nvs = EspDefaultNvsPartition::take()?;
+
+    let default = EspDefaultNvsPartition::take().unwrap();
+
+    let default_clone = default.clone();
 
     let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(peripherals.modem, sys_loop.clone(), None)?,
+        EspWifi::new(peripherals.modem, sys_loop.clone(), Some(default_clone))?,
         sys_loop,
     )?;
 
@@ -372,8 +377,10 @@ fn main() -> anyhow::Result<()> {
     // Start relay module
     relay_module.start();
 
+    let default_clone = default.clone();
+
     // Init schedule module
-    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(tx.clone());
+    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(tx.clone(), default_clone);
 
     // Start schedule module
     schedule_module.start();
@@ -439,6 +446,7 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     BoardEvent::ScheduleUpdated { version } => (),
+                    BoardEvent::ScheduleLoaded { version } => (),
                     BoardEvent::ProgramStarted { program } => {
                         info!("Program started: {}", program.name);
                         relay_tx
