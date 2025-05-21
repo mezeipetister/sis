@@ -90,7 +90,7 @@ export default function EditProgramModal({ program, zones, onClose }: Props) {
 				</div>
 
 				<div>
-					<label className="block font-medium mb-1">Programok (csoportok, rendezhetők):</label>
+					<label className="block font-medium mb-1">Program (csoportok, rendezhetők):</label>
 					<DragDropContext onDragEnd={handleDragEnd}>
 						<Droppable droppableId="zoneActionsList">
 							{(provided) => (
