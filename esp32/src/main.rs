@@ -75,6 +75,7 @@ pub enum ServerCommand {
 pub enum BoardEvent {
     ScheduleUpdated { version: i32 },
     ProgramStarted { program: Program },
+    ProgramRunning { program: Program },
     ProgramStopped,
     ZoneActionStarted { zone_action: ZoneAction },
     ZoneActionStopped,
@@ -444,6 +445,7 @@ fn main() -> anyhow::Result<()> {
                             .send(relay::RelayCommand::StartProgram(program.clone()))
                             .unwrap();
                     }
+                    BoardEvent::ProgramRunning { program } => (),
                     BoardEvent::ProgramStopped => (),
                     BoardEvent::ZoneActionStarted { zone_action } => (),
                     BoardEvent::ZoneActionStopped => (),

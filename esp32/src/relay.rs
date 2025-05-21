@@ -146,17 +146,18 @@ impl RelayModule {
                             });
                         },
                         Ok(RelayCommand::StartProgram(prog)) => {
-                            self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() }).ok();
+                            self.tx.send(BoardEvent::ProgramRunning { program: prog.clone() }).ok();
+
+                            // Open the first zone of the program
+                            if let Some(first_zone) = prog.zones.get(0) {
+                                self.tx.send(BoardEvent::ZoneActionStarted { zone_action: first_zone.clone() }).ok();
+                                self.relay_controller.open(first_zone.zone_ids.clone());
+                            }
+
                             current_program = Some(prog);
                             current_zone_index = Some(0);
                             zone_start_time = Some(Instant::now());
 
-                            if let Some(ref prog) = current_program {
-                                if let Some(zone) = prog.zones.get(0) {
-                                    self.tx.send(BoardEvent::ZoneActionStarted { zone_action: zone.clone() }).ok();
-                                    self.relay_controller.open(zone.zone_ids.clone());
-                                }
-                            }
                         },
                         Err(_) => break, // channel closed
                     }

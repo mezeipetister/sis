@@ -104,8 +104,6 @@ impl ScheduleModule {
                                 {
                                     self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() }).ok();
                                     info!("Program started by ID: {}", id);
-                                    // Recalculate the next program
-                                    self.set_next_program();
 
                                 } else {
                                     info!("Program with ID {} not found", id);
@@ -125,6 +123,7 @@ impl ScheduleModule {
                 recv(timer_rx) -> _ => {
                     if let Some(prog) = next_prog_opt.as_ref() {
                         self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() }).ok();
+                        self.set_next_program();
                         info!("Program started automatically.");
                     }
                 }

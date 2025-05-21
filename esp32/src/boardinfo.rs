@@ -59,9 +59,10 @@ impl BoardInfo {
                     None // nincs változás, ne küldjük újra
                 }
             }
+            BoardEvent::ProgramStarted { program } => None,
             // Board started a program
             // Update running program
-            BoardEvent::ProgramStarted { program } => {
+            BoardEvent::ProgramRunning { program } => {
                 self.running_program = Some(program.id.clone());
 
                 Some(self.clone())
