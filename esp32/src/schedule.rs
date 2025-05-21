@@ -66,6 +66,8 @@ impl ScheduleModule {
 
     fn run(mut self) {
         loop {
+            self.set_next_program();
+
             let next_prog_opt = self.next_program_opt.clone();
             let wait_duration = self.wait_duration;
 
