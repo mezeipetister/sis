@@ -37,12 +37,6 @@ impl WsModule {
 
         info!("WebSocket client connected");
 
-        let mut boardinfo = BoardInfo::default();
-
-        let data = serde_json::to_string(&boardinfo).unwrap();
-
-        info!("WebSocket client sent data: {}", data);
-
         std::thread::spawn(move || loop {
             select! {
                 recv(self.rx) -> msg => {

@@ -1,5 +1,6 @@
 use chrono::{TimeZone, Utc};
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use log::info;
 use serde::Serialize;
 
 use crate::{get_mac, relay::RelayController, BoardEvent, ZoneAction};
@@ -50,9 +51,13 @@ impl BoardInfo {
             BoardEvent::ServerCommandArrived { command: _ } => None,
             // Board stored new schedule
             // Update schedule version
-            BoardEvent::ScheduleUpdated { schedule } => {
-                self.schedule_version = schedule.version;
-                Some(self.clone())
+            BoardEvent::ScheduleUpdated { version } => {
+                if self.schedule_version != *version {
+                    self.schedule_version = *version;
+                    Some(self.clone()) // új állapot, küldeni kell
+                } else {
+                    None // nincs változás, ne küldjük újra
+                }
             }
             // Board started a program
             // Update running program

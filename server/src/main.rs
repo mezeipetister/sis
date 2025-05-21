@@ -114,6 +114,18 @@ async fn websocket_handler(
     ws.channel(move |mut stream| {
         Box::pin(async move {
             let mut device_id: Option<String> = None;
+
+            // Send the initial schedule to the client
+            let collection = client
+                .database("sis")
+                .collection::<Schedule>("schedule");
+            
+            if let Ok(Some(latest_schedule)) = collection.find_one(doc! {}).await {
+                let msg = ServerCommand::SetNewSchedule(latest_schedule);
+                let json = serde_json::to_string(&msg).unwrap();
+                stream.send(ws::Message::Text(json.into())).await?;
+            }
+            
             loop {
                 tokio::select! {
                     // Handle incoming WebSocket messages from client
@@ -446,7 +458,12 @@ async fn set_program(
     // Notify clients
     let _ = state
         .cmd_tx
-        .send(ServerCommand::SetNewSchedule(schedule))
+        .send(ServerCommand::SetNewSchedule(schedule.clone()))
+        .map_err(|_| Status::InternalServerError)?;
+
+    let _ = state
+        .cmd_tx
+        .send(ServerCommand::SetNewSchedule(schedule.clone()))
         .map_err(|_| Status::InternalServerError)?;
 
     Ok(Status::Ok)
@@ -494,7 +511,12 @@ async fn remove_program(state: &State<AppState>, id: String) -> Result<Status, S
     // Notify clients
     let _ = state
         .cmd_tx
-        .send(ServerCommand::SetNewSchedule(schedule))
+        .send(ServerCommand::SetNewSchedule(schedule.clone()))
+        .map_err(|_| Status::InternalServerError)?;
+
+    let _ = state
+        .cmd_tx
+        .send(ServerCommand::SetNewSchedule(schedule.clone()))
         .map_err(|_| Status::InternalServerError)?;
 
     Ok(Status::Ok)
@@ -541,7 +563,7 @@ async fn update_program_active(
 
     let _ = state
         .cmd_tx
-        .send(ServerCommand::SetNewSchedule(schedule))
+        .send(ServerCommand::SetNewSchedule(schedule.clone()))
         .map_err(|_| Status::InternalServerError)?;
 
     Ok(Status::Ok)

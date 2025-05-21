@@ -37,6 +37,7 @@ const PASSWORD: &str = env!("WIFI_PASS");
 
 mod boardinfo;
 mod relay;
+mod schedule;
 mod time;
 mod ws;
 
@@ -46,7 +47,7 @@ pub struct ZoneAction {
     duration_seconds: i32,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct Program {
     id: String,
     name: String,
@@ -56,7 +57,7 @@ pub struct Program {
     zones: Vec<ZoneAction>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct Schedule {
     version: i32,
     programs: Vec<Program>,
@@ -72,7 +73,7 @@ pub enum ServerCommand {
 
 #[derive(Debug, Clone)]
 pub enum BoardEvent {
-    ScheduleUpdated { schedule: Schedule },
+    ScheduleUpdated { version: i32 },
     ProgramStarted { program: Program },
     ProgramStopped,
     ZoneActionStarted { zone_action: ZoneAction },
@@ -210,6 +211,8 @@ fn main() -> anyhow::Result<()> {
         sys_loop,
     )?;
 
+    use std::fs::File;
+    use std::io::{self, Write as IoWrite};
     use std::sync::mpsc;
     use std::sync::mpsc::{Receiver, Sender};
     use std::sync::Mutex;
@@ -368,6 +371,12 @@ fn main() -> anyhow::Result<()> {
     // Start relay module
     relay_module.start();
 
+    // Init schedule module
+    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(None, tx.clone());
+
+    // Start schedule module
+    schedule_module.start();
+
     loop {
         match rx.recv() {
             Ok(event) => {
@@ -379,7 +388,7 @@ fn main() -> anyhow::Result<()> {
                         .unwrap();
                 }
 
-                info!("Received BoardEvent: {:?}", event);
+                // info!("Received BoardEvent: {:?}", event);
 
                 match event {
                     BoardEvent::DateTimeUpdated { time } => {
@@ -406,7 +415,9 @@ fn main() -> anyhow::Result<()> {
                         match command {
                             ServerCommand::SetNewSchedule(schedule) => {
                                 info!("New schedule received: version={}", schedule.version);
-                                // Update schedule here if needed
+                                schedule_tx
+                                    .send(schedule::ScheduleCommand::UpdateSchedule(schedule))
+                                    .unwrap();
                             }
                             ServerCommand::Stop => {
                                 info!("Stop command received");
@@ -420,14 +431,19 @@ fn main() -> anyhow::Result<()> {
                             }
                             ServerCommand::StartProgram(program_id) => {
                                 info!("StartProgram command received: {}", program_id);
-                                // relay_tx
-                                //     .send(relay::RelayCommand::StartProgram(program_id.clone()))
-                                //     .unwrap();
+                                schedule_tx
+                                    .send(schedule::ScheduleCommand::StartProgramById(program_id))
+                                    .unwrap();
                             }
                         }
                     }
-                    BoardEvent::ScheduleUpdated { schedule } => (),
-                    BoardEvent::ProgramStarted { program } => (),
+                    BoardEvent::ScheduleUpdated { version } => (),
+                    BoardEvent::ProgramStarted { program } => {
+                        info!("Program started: {}", program.name);
+                        relay_tx
+                            .send(relay::RelayCommand::StartProgram(program.clone()))
+                            .unwrap();
+                    }
                     BoardEvent::ProgramStopped => (),
                     BoardEvent::ZoneActionStarted { zone_action } => (),
                     BoardEvent::ZoneActionStopped => (),
