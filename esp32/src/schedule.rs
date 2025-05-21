@@ -2,6 +2,8 @@ use crate::{BoardEvent, Program, Schedule};
 use chrono::{Datelike, Local, NaiveDateTime, Utc};
 use crossbeam::channel::{self, Receiver, Sender};
 use crossbeam::select;
+use esp_idf_svc::hal::ledc::LedcChannel;
+use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use log::info;
 use std::thread;
 use std::time::Duration;
@@ -18,25 +20,29 @@ pub struct ScheduleModule {
     schedule: Option<Schedule>,
     next_program_opt: Option<Program>,
     wait_duration: Duration,
+    nvs: EspNvs<NvsDefault>,
 }
 
 impl ScheduleModule {
-    pub fn new(
-        schedule: Option<Schedule>,
-        tx: Sender<BoardEvent>,
-    ) -> (Self, Sender<ScheduleCommand>) {
+    pub fn new(tx: Sender<BoardEvent>) -> (Self, Sender<ScheduleCommand>) {
         let (cmd_tx, rx) = channel::unbounded();
 
         let next_program_opt = None;
         let wait_duration = Duration::from_secs(0);
 
+        let default = EspDefaultNvsPartition::take().unwrap();
+        let mut nvs = EspNvs::new(default, "storage", true).unwrap();
+
         let mut res = Self {
             rx,
             tx,
-            schedule,
+            schedule: None,
             next_program_opt,
             wait_duration,
+            nvs,
         };
+
+        res.load_schedule_from_nvs().unwrap();
 
         // Set the initial the next program
         res.set_next_program();
@@ -88,6 +94,11 @@ impl ScheduleModule {
                             // let version = new_sched.version;
                             self.schedule = Some(new_sched.clone());
                             info!("Schedule updated to version {}", &new_sched.version);
+
+                            // Save the schedule to NVS
+                            if let Err(e) = self.save_schedule_to_nvs(&new_sched) {
+                                info!("Failed to save schedule to NVS: {}", e);
+                            }
 
                             // Recalculate the next program
                             self.set_next_program();
@@ -183,5 +194,26 @@ impl ScheduleModule {
                 .unwrap_or(Duration::from_secs(0));
             (prog, dur)
         })
+    }
+
+    fn save_schedule_to_nvs(&mut self, schedule: &Schedule) -> anyhow::Result<()> {
+        let data = bincode::serialize(&schedule)?;
+        self.nvs.set_raw("schedule_bin", &data)?;
+        info!("Schedule saved to NVS. Version: {}", schedule.version);
+
+        Ok(())
+    }
+
+    fn load_schedule_from_nvs(&mut self) -> anyhow::Result<()> {
+        let mut buf = vec![0u8; 12288];
+        let _ = self.nvs.get_raw("schedule_bin", &mut buf)?;
+        if buf.len() > 0 {
+            let schedule: Schedule = bincode::deserialize(&buf)?;
+            info!("Schedule loaded from NVS. Version: {}", schedule.version);
+            self.schedule = Some(schedule);
+        } else {
+            info!("No schedule found in NVS.");
+        }
+        Ok(())
     }
 }

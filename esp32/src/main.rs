@@ -47,7 +47,7 @@ pub struct ZoneAction {
     duration_seconds: i32,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Program {
     id: String,
     name: String,
@@ -57,7 +57,7 @@ pub struct Program {
     zones: Vec<ZoneAction>,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Schedule {
     version: i32,
     programs: Vec<Program>,
@@ -205,10 +205,10 @@ fn main() -> anyhow::Result<()> {
 
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
-    let nvs = EspDefaultNvsPartition::take()?;
+    // let nvs = EspDefaultNvsPartition::take()?;
 
     let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
+        EspWifi::new(peripherals.modem, sys_loop.clone(), None)?,
         sys_loop,
     )?;
 
@@ -373,7 +373,7 @@ fn main() -> anyhow::Result<()> {
     relay_module.start();
 
     // Init schedule module
-    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(None, tx.clone());
+    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(tx.clone());
 
     // Start schedule module
     schedule_module.start();
