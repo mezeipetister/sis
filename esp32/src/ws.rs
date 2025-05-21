@@ -105,6 +105,9 @@ pub enum WsCommand {
 }
 
 fn handle_event(tx: &Sender<BoardEvent>, event: &Result<WebSocketEvent, EspIOError>) {
+    use std::sync::OnceLock;
+    static TEXT_BUFFER: OnceLock<std::sync::Mutex<String>> = OnceLock::new();
+
     if let Ok(event) = event {
         match event.event_type {
             WebSocketEventType::BeforeConnect => {
@@ -130,11 +133,28 @@ fn handle_event(tx: &Sender<BoardEvent>, event: &Result<WebSocketEvent, EspIOErr
                 tx.send(BoardEvent::WsStatusChanged { connected: false })
                     .ok();
             }
-            WebSocketEventType::Text(text) => {
-                info!("Websocket recv, text: {text}");
-                let command: ServerCommand = serde_json::from_str(&text).unwrap();
-                tx.send(BoardEvent::ServerCommandArrived { command: command })
-                    .ok();
+            WebSocketEventType::Text(chunk) => {
+                let buffer = TEXT_BUFFER.get_or_init(|| std::sync::Mutex::new(String::new()));
+                let mut buf = buffer.lock().unwrap();
+                buf.push_str(&chunk);
+
+                // Próbáljuk meg parse-olni
+                match serde_json::from_str::<ServerCommand>(&buf) {
+                    Ok(command) => {
+                        tx.send(BoardEvent::ServerCommandArrived { command }).ok();
+                        buf.clear(); // sikeres parse után ürítsd a buffert
+                    }
+                    Err(e) => {
+                        if e.is_eof() {
+                            // További darabokat várunk
+                            info!("Partial WebSocket message received, waiting for more...");
+                        } else {
+                            // Valódi hiba: logoljuk és ürítjük a buffert
+                            log::error!("WebSocket JSON parse error: {e}, dropping buffer");
+                            buf.clear();
+                        }
+                    }
+                }
             }
             WebSocketEventType::Binary(binary) => {
                 info!("Websocket recv, binary: {binary:?}");
