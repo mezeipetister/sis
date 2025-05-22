@@ -1,12 +1,7 @@
-use chrono::Utc;
 use log::info;
-use mongodb::Collection;
 use mongodb::bson::{self, doc};
 use rocket::http::Status;
-use rocket::request::{FromRequest, Outcome};
-use rocket::response::stream::EventStream;
 use rocket::serde::json::Json;
-use rocket::tokio::stream;
 use rocket::tokio::sync::Mutex;
 use rocket::tokio::sync::broadcast::{self, Receiver, Sender};
 use rocket::{State, post};
@@ -17,7 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-use ws::Message;
 
 #[derive(Debug, Serialize, Clone)]
 pub enum ServerCommand {
@@ -99,16 +93,14 @@ pub struct LogEvent {
     pub log: String,
 }
 
-struct AuthToken;
+// struct AuthToken;
 
 #[get("/websocket")]
 async fn websocket_handler(
-    mut ws: rocket_ws::WebSocket,
+    ws: rocket_ws::WebSocket,
     state: &State<AppState>,
 ) -> ws::Channel<'static> {
-    use mongodb::bson::{doc, to_document};
-    use mongodb::options::FindOptions;
-    use rocket::form::Form;
+    use mongodb::bson::{doc};
     use rocket::futures::SinkExt;
 
     // Clone only the necessary Arc/Mutex for static lifetime
@@ -595,6 +587,8 @@ async fn update_program_active(
 async fn main() {
     // Initialize the command channel
     env_logger::init();
+
+    print!("Starting server...");
 
     info!("Starting server...");
 

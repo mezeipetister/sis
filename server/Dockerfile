@@ -2,7 +2,7 @@
 # We are using multi-stage builds to reduce the size of the final image
 
 # 1. Phase: The build phase
-FROM rust:slim-bullseye AS builder
+FROM rust:1.86-slim-bullseye AS builder
 
 # 2. Installing the necessary build dependencies
 RUN apt-get update -y && \

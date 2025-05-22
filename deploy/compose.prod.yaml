@@ -37,6 +37,10 @@ services:
       - sis_network
     volumes:
       - sis_data:/data/db
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   server:
     image: ghcr.io/mezeipetister/sis_server:latest
@@ -55,6 +59,7 @@ services:
     depends_on:
       mongo:
         condition: service_started
+        
   web_gui:
     image: ghcr.io/mezeipetister/sis_web:latest
     build:
