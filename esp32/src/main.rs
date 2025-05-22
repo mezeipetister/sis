@@ -1,38 +1,27 @@
 use boardinfo::BoardInfo;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
+use chrono::{NaiveDateTime, NaiveTime, Utc};
 use core::convert::TryInto;
-use core::error;
 use ds3231::{
     Config as DsConfig, InterruptControl, Ocillator, SquareWaveFrequency, TimeRepresentation,
     DS3231,
 };
-use embedded_svc::http::client::Client;
-use embedded_svc::http::Method;
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
-use embedded_svc::{http::client::Client as HttpClient, io::Write, utils::io};
-use esp_idf_svc::hal::gpio::{AnyIOPin, Output, Pin, PinDriver};
+use esp_idf_svc::hal::gpio::PinDriver;
 use esp_idf_svc::hal::i2c::config::Config as I2cConfig;
 use esp_idf_svc::hal::i2c::I2cDriver;
-use esp_idf_svc::hal::peripherals;
 use esp_idf_svc::hal::peripherals::Peripherals;
-use esp_idf_svc::http::client::Configuration as HttpClientConfiguration;
-use esp_idf_svc::http::client::EspHttpConnection;
 use esp_idf_svc::log::EspLogger;
-use esp_idf_svc::nvs::EspNvs;
 use esp_idf_svc::sntp::{self, SyncStatus};
-use esp_idf_svc::systime::EspSystemTime;
-use esp_idf_svc::tls::{Config, EspTls};
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
-use esp_idf_sys::tzset;
 use log::info;
 use relay::{Relay, RelayController};
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread::{self};
 use std::time::Duration;
 
+const WS_URL: &str = env!("WS_URL");
+const WS_AUTH_TOKEN: &str = env!("WS_AUTH_TOKEN");
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
@@ -214,8 +203,6 @@ fn main() -> anyhow::Result<()> {
         esp_idf_sys::esp_tls_init_global_ca_store();
     }
 
-    let (s, r) = crossbeam::channel::unbounded::<BoardEvent>();
-
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
 
@@ -228,23 +215,12 @@ fn main() -> anyhow::Result<()> {
         sys_loop,
     )?;
 
-    use std::fs::File;
-    use std::io::{self, Write as IoWrite};
-    use std::sync::mpsc;
-    use std::sync::mpsc::{Receiver, Sender};
-    use std::sync::Mutex;
-
     // let led = PinDriver::output(peripherals.pins.gpio2)?;
     // let led = Arc::new(Mutex::new(led));
     // let led_clone = Arc::clone(&led);
 
     let mac_address_str = get_mac(&wifi)?;
     info!("MAC Address: {}", mac_address_str);
-
-    #[derive(Deserialize)]
-    struct TimeApiResponse {
-        datetime: String,
-    }
 
     // Initialize device with I2C
     let i2c = I2cDriver::new(
@@ -282,12 +258,6 @@ fn main() -> anyhow::Result<()> {
     let now = Utc::now().naive_utc();
     info!("Current UTC time from systime: {now}");
 
-    let utc_logger_handle = thread::spawn(move || loop {
-        let current_utc_time = Utc::now().naive_utc();
-        info!("Current UTC time: {}", current_utc_time);
-        thread::sleep(Duration::from_secs(1));
-    });
-
     let mac = get_mac(&wifi)?;
 
     let relay_pins: Vec<Relay> = vec![
@@ -322,7 +292,7 @@ fn main() -> anyhow::Result<()> {
     ];
 
     // RelayController initialization
-    let mut relay_controller = RelayController::new(relay_pins);
+    let relay_controller = RelayController::new(relay_pins);
 
     // BoardInfo initialization
     let mut boardinfo = BoardInfo::init(&wifi, &relay_controller, 0);
@@ -364,7 +334,7 @@ fn main() -> anyhow::Result<()> {
                 info!("SNTP reset");
             }
         }
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(20));
     }
 
     let now = Utc::now().naive_utc();
@@ -373,11 +343,8 @@ fn main() -> anyhow::Result<()> {
     let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
 
     // Init WsModule
-    let (ws_module, ws_tx) = ws::WsModule::new(
-        format!("ws://192.168.88.30:3400/websocket"),
-        "hellobello".to_string(),
-        tx.clone(),
-    );
+    let (ws_module, ws_tx) =
+        ws::WsModule::new(WS_URL.to_string(), WS_AUTH_TOKEN.to_string(), tx.clone());
 
     // Start WebSocket module
     ws_module.start();
@@ -456,17 +423,17 @@ fn main() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    BoardEvent::ScheduleUpdated { version } => (),
-                    BoardEvent::ScheduleLoaded { version } => (),
+                    BoardEvent::ScheduleUpdated { version: _ } => (),
+                    BoardEvent::ScheduleLoaded { version: _ } => (),
                     BoardEvent::ProgramStarted { program } => {
                         info!("Program started: {}", program.name);
                         relay_tx
                             .send(relay::RelayCommand::StartProgram(program.clone()))
                             .unwrap();
                     }
-                    BoardEvent::ProgramRunning { program } => (),
+                    BoardEvent::ProgramRunning { program: _ } => (),
                     BoardEvent::ProgramStopped => (),
-                    BoardEvent::ZoneActionStarted { zone_action } => (),
+                    BoardEvent::ZoneActionStarted { zone_action: _ } => (),
                     BoardEvent::ZoneActionStopped => (),
                 }
             }

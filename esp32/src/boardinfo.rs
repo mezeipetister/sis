@@ -1,9 +1,5 @@
 use chrono::{TimeZone, Utc};
-use esp_idf_svc::{
-    nvs::{EspNvs, EspNvsPartition, NvsDefault},
-    wifi::{BlockingWifi, EspWifi},
-};
-use log::info;
+use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use serde::Serialize;
 
 use crate::{get_mac, relay::RelayController, BoardEvent, ZoneAction};
@@ -80,7 +76,7 @@ impl BoardInfo {
                     None // nincs változás, ne küldjük újra
                 }
             }
-            BoardEvent::ProgramStarted { program } => None,
+            BoardEvent::ProgramStarted { program: _ } => None,
             // Board started a program
             // Update running program
             BoardEvent::ProgramRunning { program } => {

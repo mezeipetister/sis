@@ -140,7 +140,7 @@ impl RelayModule {
                                 id: "single".into(),
                                 name: "Ad-hoc".into(),
                                 weekdays: vec![],
-                                start_time: chrono::NaiveTime::from_hms(0, 0, 0),
+                                start_time: chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
                                 active: true,
                                 zones: vec![zone],
                             });
