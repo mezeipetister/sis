@@ -68,8 +68,6 @@ impl WifiModule {
         self.wifi.wait_netif_up().await?;
         info!("Wifi netif up");
 
-        self.is_online = true;
-
         Ok(())
     }
 
@@ -101,7 +99,11 @@ impl WifiModule {
                             self.is_online = false;
                         } else {
                             info!("WiFi OK");
-                            let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: true });
+                            if !self.is_online {
+                                self.is_online = true;
+                                let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: true });
+                                info!("WiFi connected!");
+                            }
                         }
                     }
                 }

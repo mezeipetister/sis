@@ -285,6 +285,19 @@ fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
 
+    // Init relay module
+    let (relay_module, relay_tx) = relay::RelayModule::new(relay_controller, tx.clone());
+    // Start relay module
+    relay_module.start();
+
+    let default_clone = default.clone();
+
+    // Init schedule module
+    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(tx.clone(), default_clone);
+
+    // Start schedule module
+    schedule_module.start();
+
     let mac = get_mac(&wifi)?;
     info!("MAC Address: {}", mac);
 
@@ -325,19 +338,6 @@ fn main() -> anyhow::Result<()> {
     // Start WebSocket module
     ws_module.start();
     info!("WebSocket client started");
-
-    // Init relay module
-    let (relay_module, relay_tx) = relay::RelayModule::new(relay_controller, tx.clone());
-    // Start relay module
-    relay_module.start();
-
-    let default_clone = default.clone();
-
-    // Init schedule module
-    let (schedule_module, schedule_tx) = schedule::ScheduleModule::new(tx.clone(), default_clone);
-
-    // Start schedule module
-    schedule_module.start();
 
     loop {
         match rx.recv() {
