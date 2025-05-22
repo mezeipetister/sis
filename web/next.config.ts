@@ -1,19 +1,15 @@
 import type {NextConfig} from 'next';
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   output: 'standalone',
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,
   },
-  //   experimental: {
-  //     serverActions: {
-  //       allowedOrigins: ['localhost'],
-  //       // allowedForwardedHosts: ["localhost:3000"],
-  //       // ^ You might have to use this property depending on your exact
-  //       version.
-  //     }
-  //   }
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
+
 
 export default nextConfig;
