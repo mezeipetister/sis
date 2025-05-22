@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { setProgram } from "@/app/actions/schedule-actions";
+import { v4 as uuidv4 } from "uuid";
 
 export default function NewProgramModal() {
 	const [open, setOpen] = useState(false);
@@ -18,7 +19,7 @@ export default function NewProgramModal() {
 
 	const handleSubmit = async () => {
 		await setProgram({
-			id: crypto.randomUUID(),
+			id: uuidv4(),
 			name,
 			start_time: startTime,
 			weekdays,

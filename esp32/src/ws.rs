@@ -33,7 +33,7 @@ impl WsModule {
     /// Start the WebSocket client
     /// bg loop
     pub fn start(self) {
-        let mut client = connect_ws_with_token(&self.url, &self.token, self.tx).unwrap();
+        let mut client = connect_ws_with_token(&self.url, &self.token, self.tx.clone()).unwrap();
 
         info!("WebSocket client connected");
 
@@ -57,6 +57,13 @@ impl WsModule {
                                 WsCommand::Connect => {
                                     // Optionally handle reconnect logic here
                                     info!("Received Connect command");
+                                    if !client.is_connected() {
+                                        info!("WebSocket client is not connected, attempting to reconnect");
+                                        client = connect_ws_with_token(&self.url, &self.token, self.tx.clone()).unwrap();
+                                        info!("WebSocket client reconnected");
+                                    } else {
+                                        info!("WebSocket client is already connected");
+                                    }
                                 }
                             }
                         }

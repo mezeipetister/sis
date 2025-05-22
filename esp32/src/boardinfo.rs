@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::wifi::{AsyncWifi, BlockingWifi, EspWifi};
 use serde::Serialize;
 
 use crate::{get_mac, relay::RelayController, BoardEvent, ZoneAction};
@@ -17,7 +17,7 @@ pub struct BoardInfo {
 
 impl BoardInfo {
     pub fn init(
-        wifi: &BlockingWifi<EspWifi<'static>>,
+        wifi: &AsyncWifi<EspWifi<'static>>,
         relay_controller: &RelayController,
         schedule_version: i32,
     ) -> Self {
@@ -42,6 +42,10 @@ impl BoardInfo {
     // Apply board event to update the BoardInfo
     // Returns Some(updated BoardInfo) if the event was applied, None otherwise
     pub fn apply_event(&mut self, event: &BoardEvent) -> Option<Self> {
+        // Update the datetime to the current time
+        self.datetime = Utc::now().to_rfc3339();
+
+        // Match the event and update the BoardInfo accordingly
         match event {
             BoardEvent::DateTimeUpdated { time } => {
                 self.datetime = Utc.from_utc_datetime(time).to_rfc3339();
@@ -52,7 +56,7 @@ impl BoardInfo {
                 Some(self.clone())
             }
             BoardEvent::WsStatusChanged { connected: _ } => None,
-            BoardEvent::WifiStatusChanged { status: _ } => None,
+            BoardEvent::WifiStatusChanged { connected: _ } => None,
             BoardEvent::ServerCommandArrived { command: _ } => None,
             // Board stored new schedule
             // Update schedule version

@@ -12,7 +12,8 @@ use esp_idf_svc::hal::i2c::I2cDriver;
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::sntp::{self, SyncStatus};
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::timer::EspTaskTimerService;
+use esp_idf_svc::wifi::{AsyncWifi, BlockingWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 use log::info;
 use relay::{Relay, RelayController};
@@ -40,6 +41,7 @@ mod boardinfo;
 mod relay;
 mod schedule;
 mod time;
+mod wifi;
 mod ws;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -83,7 +85,7 @@ pub enum BoardEvent {
     ZoneActionStopped,
     DateTimeUpdated { time: NaiveDateTime },
     WsStatusChanged { connected: bool },
-    WifiStatusChanged { status: bool },
+    WifiStatusChanged { connected: bool },
     ServerCommandArrived { command: ServerCommand },
 }
 
@@ -133,44 +135,13 @@ fn set_system_time_from_naive(dt: NaiveDateTime) -> Result<(), ()> {
 // It uses the EspWifi API to get the MAC address from the network interface.
 // The function takes a reference to a BlockingWifi instance
 // and returns a Result containing the MAC address string or an error.
-fn get_mac(wifi: &BlockingWifi<EspWifi<'static>>) -> anyhow::Result<String> {
+fn get_mac(wifi: &AsyncWifi<EspWifi<'static>>) -> anyhow::Result<String> {
     let mac = wifi.wifi().sta_netif().get_mac()?;
     let mac_str = format!(
         "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
     Ok(mac_str)
-}
-
-// Connect to WiFi
-// This function is used to connect to a WiFi network.
-// It takes a mutable reference to a BlockingWifi instance
-// and returns a Result indicating success or failure.
-// The function creates a Configuration object with the SSID and password,
-// sets the configuration on the wifi instance, starts the wifi,
-// and waits for the network interface to be up.
-fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()> {
-    let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
-        ssid: SSID.try_into().unwrap(),
-        bssid: None,
-        auth_method: AuthMethod::WPA2Personal,
-        password: PASSWORD.try_into().unwrap(),
-        channel: None,
-        ..Default::default()
-    });
-
-    wifi.set_configuration(&wifi_configuration)?;
-
-    wifi.start()?;
-    info!("Wifi started");
-
-    wifi.connect()?;
-    info!("Wifi connected");
-
-    wifi.wait_netif_up()?;
-    info!("Wifi netif up");
-
-    Ok(())
 }
 
 // Read time from DS3231
@@ -209,10 +180,12 @@ fn main() -> anyhow::Result<()> {
     let default = EspDefaultNvsPartition::take().unwrap();
 
     let default_clone = default.clone();
+    let timer_service = EspTaskTimerService::new()?;
 
-    let mut wifi = BlockingWifi::wrap(
+    let mut wifi = AsyncWifi::wrap(
         EspWifi::new(peripherals.modem, sys_loop.clone(), Some(default_clone))?,
         sys_loop,
+        timer_service,
     )?;
 
     // let led = PinDriver::output(peripherals.pins.gpio2)?;
@@ -310,10 +283,15 @@ fn main() -> anyhow::Result<()> {
     //     thread::sleep(Duration::from_secs(1));
     // });
 
-    connect_wifi(&mut wifi)?;
+    let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
 
     let mac = get_mac(&wifi)?;
     info!("MAC Address: {}", mac);
+
+    // Initialize WiFi
+    let (wifi_module, wifi_tx) = wifi::WifiModule::new(wifi, tx.clone())?;
+    // Start WiFi module
+    wifi_module.start();
 
     let _sntp = sntp::EspSntp::new_default()?;
     info!("SNTP initialized");
@@ -339,8 +317,6 @@ fn main() -> anyhow::Result<()> {
 
     let now = Utc::now().naive_utc();
     info!("Current UTC time from systime: {now}");
-
-    let (tx, rx) = crossbeam::channel::unbounded::<BoardEvent>();
 
     // Init WsModule
     let (ws_module, ws_tx) =
@@ -387,14 +363,21 @@ fn main() -> anyhow::Result<()> {
                         // Send connect command if not connected to WS process
                         if !connected {
                             ws_tx.send(ws::WsCommand::Connect).unwrap();
+                            info!("WebSocket client not connected, attempting to reconnect");
                         } else {
                             ws_tx
                                 .send(ws::WsCommand::NewBoardInfo(boardinfo.clone()))
                                 .unwrap();
                         }
                     }
-                    BoardEvent::WifiStatusChanged { status } => {
+                    BoardEvent::WifiStatusChanged { connected: status } => {
                         info!("WiFi status changed: status={}", status);
+                        if !status {
+                            wifi_tx.send(wifi::WifiCommand::Connect).unwrap();
+                            info!("WiFi client not connected, attempting to reconnect");
+                        } else {
+                            info!("WiFi client connected");
+                        }
                     }
                     BoardEvent::ServerCommandArrived { command } => {
                         info!("Server command arrived: {:?}", command);
