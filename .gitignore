@@ -1,5 +1,6 @@
 /target/
 /.embuild/
 /_esp32/
+/deploy/htpasswd.dev
 
 /deploy/ENV.list

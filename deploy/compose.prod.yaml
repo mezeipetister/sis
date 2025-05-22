@@ -1,26 +1,53 @@
 name: sis
 services:
+  nginx:
+    image: nginx
+    restart: always
+    volumes:
+      - type: bind
+        source: ./nginx.prod.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+      # - type: bind
+      #   source: ssl
+      #   target: /etc/nginx/ssl
+      #   read_only: true
+      # - type: bind
+      #   source: ./under_construction.html
+      #   target: /usr/share/nginx/html/under_construction.html
+      #   read_only: true
+      - type: bind
+        source: htpasswd.dev
+        target: /etc/nginx/.htpasswd
+        read_only: true
+    ports:
+      - 80:80
+    networks:
+      - sis_network
+
   mongo:
     image: mongo
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - "27019:27017"
     networks:
       - sis_network
-    ports:
-      - "27017:27017"
     volumes:
       - sis_data:/data/db
 
-  web_gui:
-    image: ghcr.io/mezeipetister/sis_web:latest
+  server:
+    image: ghcr.io/mezeipetister/sis_server:latest
     build:
-      context: ../web
-      dockerfile: Dockerfile.prod
+      context: ../server
+      dockerfile: Dockerfile
+      # args:
+        # - SERVICE_NAME=login_service
     restart: always
     ports:
-      - "3200:3200"
+      - "3400:3400"
     env_file:
       - ENV.list
     networks:
@@ -28,7 +55,20 @@ services:
     depends_on:
       mongo:
         condition: service_started
-      core_service:
+  web_gui:
+    image: ghcr.io/mezeipetister/sis_web:latest
+    build:
+      context: ../web
+      dockerfile: Dockerfile.prod
+    restart: always
+    ports:
+      - "3200:3000"
+    env_file:
+      - ENV.list
+    networks:
+      - sis_network
+    depends_on:
+      mongo:
         condition: service_started
 
 networks:
