@@ -36,6 +36,17 @@ use std::time::Duration;
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 
+// const RELAY_PIN_MAP: [(i32, i32); 8] = [
+//     (1, 2),
+//     (2, 4),
+//     (3, 5),
+//     (4, 25),
+//     (5, 26),
+//     (6, 18),
+//     (7, 19),
+//     (8, 23), // kamu
+// ];
+
 mod boardinfo;
 mod relay;
 mod schedule;
