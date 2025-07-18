@@ -188,7 +188,18 @@ impl RelayModule {
 
                         if let Some(zone) = prog.zones.get(index) {
                             if elapsed >= zone.duration_seconds as u64 {
+
+                                // Close all relays
                                 self.relay_controller.close_all();
+                                thread::sleep(Duration::from_millis(100));
+
+                                // Close all again to ensure
+                                self.relay_controller.close_all();
+                                thread::sleep(Duration::from_millis(100));
+
+                                // Close all again to ensure
+                                self.relay_controller.close_all();
+
                                 self.tx.send(BoardEvent::ZoneActionStopped).ok();
 
                                 let next_index = index + 1;
