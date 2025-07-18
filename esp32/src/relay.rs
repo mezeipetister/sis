@@ -19,11 +19,29 @@ pub trait RelayPin: Send {
 
 impl<P: Pin + Into<AnyIOPin>> RelayPin for PinDriver<'static, P, Output> {
     fn set_high(&mut self) {
-        self.set_high().unwrap();
+        let mut retries = 0;
+        let mut res = false;
+        while !res && retries < 5 {
+            res = self.set_high().is_ok();
+            if !res {
+                info!("Failed to set pin high, retrying...");
+                thread::sleep(Duration::from_millis(100));
+            }
+            retries += 1;
+        }
     }
 
     fn set_low(&mut self) {
-        self.set_low().unwrap();
+        let mut retries = 0;
+        let mut res = false;
+        while !res && retries < 5 {
+            res = self.set_low().is_ok();
+            if !res {
+                info!("Failed to set pin low, retrying...");
+                thread::sleep(Duration::from_millis(100));
+            }
+            retries += 1;
+        }
     }
 }
 
