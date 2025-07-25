@@ -22,61 +22,24 @@ pub struct WsModule {
     token: String,
     tx: Sender<BoardEvent>,
     rx: Receiver<WsCommand>,
-    connected: bool,
-    tx_queue: Vec<BoardEvent>,
 }
 
 impl WsModule {
     pub fn new(url: String, token: String, tx: Sender<BoardEvent>) -> (Self, Sender<WsCommand>) {
         let (module_tx, rx) = crossbeam::channel::unbounded::<WsCommand>();
-        (
-            WsModule {
-                url,
-                token,
-                tx,
-                rx,
-                connected: false,
-                tx_queue: Vec::new(),
-            },
-            module_tx,
-        )
-    }
-
-    fn set_connected(&mut self) {
-        self.connected = true;
-        // Process any queued events now that we are connected
-        for event in self.tx_queue.drain(..) {
-            if let Err(e) = self.tx.send(event.clone()) {
-                self.tx_queue.push(event);
-                log::error!("Failed to send queued event: {e}");
-            }
-        }
-
-        info!("WebSocket connection established, processing queued events");
-    }
-
-    fn set_disconnected(&mut self) {
-        self.connected = false;
-        info!("WebSocket connection lost, events will be queued");
-    }
-
-    fn send_event(&self, event: BoardEvent) {
-        if self.connected {
-            if let Err(e) = self.tx.send(event.clone()) {
-                // If sending fails, push to queue for later processing
-                self.tx_queue.push(event);
-                log::error!("Failed to send event: {e}");
-            }
-        } else {
-            self.tx_queue.push(event);
-            info!("WebSocket not connected, event queued");
-        }
+        (WsModule { url, token, tx, rx }, module_tx)
     }
 
     /// Start the WebSocket client
     /// bg loop
     pub fn start(self) {
         let mut client = connect_ws_with_token(&self.url, &self.token, self.tx.clone()).unwrap();
+
+        // Message buffer
+        let mut buffer: Vec<BoardInfo> = Vec::new();
+
+        // Connection state
+        let mut connected = false;
 
         info!("WebSocket client connected");
 
@@ -87,14 +50,21 @@ impl WsModule {
                         Ok(cmd) => {
                             match cmd {
                                 WsCommand::NewBoardInfo(new_info) => {
-                                    let data = serde_json::to_string(&new_info).unwrap();
-                                    if client.is_connected() {
-                                        info!("Sending updated BoardInfo: {}", data);
-                                    client
-                                        .send(FrameType::Text(false), data.as_bytes())
-                                        .unwrap();
+                                    if let Ok(data) = serde_json::to_string(&new_info) {
+                                        if client.is_connected() && connected {
+                                            info!("Sending updated BoardInfo: {}", data);
+                                            if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
+                                                info!("BoardInfo sent successfully");
+                                            } else {
+                                                buffer.push(new_info);
+                                                info!("Failed to send BoardInfo, WebSocket client is not connected");
+                                            }
+                                        } else {
+                                            info!("WebSocket client is not connected, cannot send BoardInfo");
+                                            buffer.push(new_info);
+                                        }
                                     } else {
-                                        info!("WebSocket client is not connected, cannot send BoardInfo");
+                                        info!("Failed to serialize BoardInfo to JSON");
                                     }
                                 }
                                 WsCommand::Connect => {
@@ -107,6 +77,29 @@ impl WsModule {
                                     } else {
                                         info!("WebSocket client is already connected");
                                     }
+                                }
+                                WsCommand::Connected => {
+                                    connected = true;
+                                    if !buffer.is_empty() {
+                                        let drained: Vec<_> = buffer.drain(..).collect();
+                                        for info in drained {
+                                            if let Ok(data) = serde_json::to_string(&info) {
+                                                if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
+                                                    info!("Buffered BoardInfo sent successfully");
+                                                } else {
+                                                    buffer.push(info);
+                                                    info!("Failed to send buffered BoardInfo, still not connected");
+                                                }
+                                            } else {
+                                                info!("Failed to serialize buffered BoardInfo to JSON");
+                                            }
+                                        }
+                                    }
+                                    info!("WebSocket client is connected");
+                                }
+                                WsCommand::Disconnected => {
+                                    connected = false;
+                                    info!("WebSocket client is disconnected");
                                 }
                             }
                         }
@@ -152,6 +145,8 @@ fn connect_ws_with_token(
 pub enum WsCommand {
     NewBoardInfo(BoardInfo),
     Connect,
+    Connected,
+    Disconnected,
 }
 
 fn handle_event(tx: &Sender<BoardEvent>, event: &Result<WebSocketEvent, EspIOError>) {

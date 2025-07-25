@@ -76,7 +76,7 @@ impl RelayController {
         Self { relays }
     }
 
-    fn close_all(&mut self) {
+    pub fn close_all(&mut self) {
         for relay in &mut self.relays {
             relay.close();
         }
