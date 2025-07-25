@@ -7,6 +7,9 @@ build:
 build-release:
 	cargo build --release
 
+install:
+	espup install
+
 flash:
 	espflash flash --monitor --partition-table partitions.csv --chip esp32 target/xtensa-esp32-espidf/debug/esp32 --no-stub
 

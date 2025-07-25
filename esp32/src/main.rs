@@ -2,7 +2,7 @@ use boardinfo::BoardInfo;
 use chrono::{NaiveDateTime, NaiveTime, Utc};
 use core::convert::TryInto;
 use ds3231::{
-    Config as DsConfig, InterruptControl, Ocillator, SquareWaveFrequency, TimeRepresentation,
+    Config as DsConfig, InterruptControl, Oscillator, SquareWaveFrequency, TimeRepresentation,
     DS3231,
 };
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
@@ -210,7 +210,7 @@ fn main() -> anyhow::Result<()> {
         square_wave_frequency: SquareWaveFrequency::Hz1,
         interrupt_control: InterruptControl::SquareWave,
         battery_backed_square_wave: false,
-        oscillator_enable: Ocillator::Enabled,
+        oscillator_enable: Oscillator::Enabled,
     };
 
     info!("Initializing DS3231...");
