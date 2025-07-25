@@ -22,12 +22,55 @@ pub struct WsModule {
     token: String,
     tx: Sender<BoardEvent>,
     rx: Receiver<WsCommand>,
+    connected: bool,
+    tx_queue: Vec<BoardEvent>,
 }
 
 impl WsModule {
     pub fn new(url: String, token: String, tx: Sender<BoardEvent>) -> (Self, Sender<WsCommand>) {
         let (module_tx, rx) = crossbeam::channel::unbounded::<WsCommand>();
-        (WsModule { url, token, tx, rx }, module_tx)
+        (
+            WsModule {
+                url,
+                token,
+                tx,
+                rx,
+                connected: false,
+                tx_queue: Vec::new(),
+            },
+            module_tx,
+        )
+    }
+
+    fn set_connected(&mut self) {
+        self.connected = true;
+        // Process any queued events now that we are connected
+        for event in self.tx_queue.drain(..) {
+            if let Err(e) = self.tx.send(event.clone()) {
+                self.tx_queue.push(event);
+                log::error!("Failed to send queued event: {e}");
+            }
+        }
+
+        info!("WebSocket connection established, processing queued events");
+    }
+
+    fn set_disconnected(&mut self) {
+        self.connected = false;
+        info!("WebSocket connection lost, events will be queued");
+    }
+
+    fn send_event(&self, event: BoardEvent) {
+        if self.connected {
+            if let Err(e) = self.tx.send(event.clone()) {
+                // If sending fails, push to queue for later processing
+                self.tx_queue.push(event);
+                log::error!("Failed to send event: {e}");
+            }
+        } else {
+            self.tx_queue.push(event);
+            info!("WebSocket not connected, event queued");
+        }
     }
 
     /// Start the WebSocket client

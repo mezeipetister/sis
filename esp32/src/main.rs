@@ -267,6 +267,9 @@ fn main() -> anyhow::Result<()> {
     // RelayController initialization
     let relay_controller = RelayController::new(relay_pins);
 
+    // Close all relays initially
+    relay_controller.close_all();
+
     // BoardInfo initialization
     let mut boardinfo = BoardInfo::init(&wifi, &relay_controller, 0);
 
