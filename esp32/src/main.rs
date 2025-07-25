@@ -1,11 +1,9 @@
 use boardinfo::BoardInfo;
 use chrono::{NaiveDateTime, NaiveTime, Utc};
-use core::convert::TryInto;
 use ds3231::{
     Config as DsConfig, InterruptControl, Oscillator, SquareWaveFrequency, TimeRepresentation,
     DS3231,
 };
-use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 use esp_idf_svc::hal::gpio::PinDriver;
 use esp_idf_svc::hal::i2c::config::Config as I2cConfig;
 use esp_idf_svc::hal::i2c::I2cDriver;
@@ -13,7 +11,7 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::sntp::{self, SyncStatus};
 use esp_idf_svc::timer::EspTaskTimerService;
-use esp_idf_svc::wifi::{AsyncWifi, BlockingWifi, EspWifi};
+use esp_idf_svc::wifi::{AsyncWifi, EspWifi};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 use log::info;
 use relay::{Relay, RelayController};
@@ -182,7 +180,7 @@ fn main() -> anyhow::Result<()> {
     let default_clone = default.clone();
     let timer_service = EspTaskTimerService::new()?;
 
-    let mut wifi = AsyncWifi::wrap(
+    let wifi = AsyncWifi::wrap(
         EspWifi::new(peripherals.modem, sys_loop.clone(), Some(default_clone))?,
         sys_loop,
         timer_service,
