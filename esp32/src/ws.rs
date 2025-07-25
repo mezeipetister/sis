@@ -13,6 +13,7 @@ use esp_idf_svc::{
 };
 use esp_idf_sys::EspError;
 use log::info;
+use std::thread;
 use std::time::Duration;
 
 use crate::{BoardEvent, BoardInfo, ServerCommand};
@@ -43,7 +44,10 @@ impl WsModule {
 
         info!("WebSocket client connected");
 
-        std::thread::spawn(move || loop {
+        thread::Builder::new()
+            .name("schedule_module".into())
+            .stack_size(4096) // vagy próbáld: 8192 vagy 16384
+            .spawn(move || loop {
             select! {
                 recv(self.rx) -> msg => {
                     match msg {
@@ -116,7 +120,8 @@ impl WsModule {
                 //     }
                 // }
             }
-        });
+        })
+            .expect("Failed to spawn schedule thread");
     }
 }
 
