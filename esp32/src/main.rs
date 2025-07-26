@@ -324,6 +324,7 @@ fn main() -> anyhow::Result<()> {
             }
             SyncStatus::Reset => {
                 info!("SNTP reset");
+                break;
             }
         }
         thread::sleep(Duration::from_secs(20));

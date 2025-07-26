@@ -48,11 +48,7 @@ impl WifiModule {
     // sets the configuration on the wifi instance, starts the wifi,
     // and waits for the network interface to be up.
     async fn connect_wifi(&mut self) -> anyhow::Result<()> {
-        // Check if already connected
-        if self.wifi.is_connected().is_ok() {
-            info!("Already connected to WiFi");
-            return Ok(());
-        }
+        info!("Connecting to WiFi...");
 
         self.connecting = true;
         self.connected = false;
@@ -96,9 +92,6 @@ impl WifiModule {
     }
 
     pub fn start(mut self) {
-        // Start the WiFi connection process
-        let _ = block_on(self.connect_wifi());
-
         thread::Builder::new()
             .name("schedule_module".into())
             .stack_size(8192) // vagy próbáld: 8192 vagy 16384
@@ -132,9 +125,11 @@ impl WifiModule {
                     // Periodikus ellenőrzés
                     let is_connected = self.wifi.is_connected().unwrap_or(false);
                     if !is_connected {
-                        warn!("WiFi disconnected!");
-                        self.connected = false;
-                        let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: false });
+                        if !self.connecting {
+                            warn!("WiFi disconnected!");
+                            self.connected = false;
+                            let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: false });
+                        }
                     } else {
                         info!("WiFi OK");
                         if !self.connected {
