@@ -91,7 +91,7 @@ impl WifiModule {
         Ok(())
     }
 
-    pub fn start(mut self) {
+    pub fn start(self) {
         thread::Builder::new()
             .name("schedule_module".into())
             .stack_size(8192) // vagy próbáld: 8192 vagy 16384
