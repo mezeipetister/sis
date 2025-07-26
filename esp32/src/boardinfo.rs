@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use esp_idf_svc::wifi::{AsyncWifi, BlockingWifi, EspWifi};
+use esp_idf_svc::wifi::{AsyncWifi, EspWifi};
 use serde::Serialize;
 
 use crate::{get_mac, relay::RelayController, BoardEvent, ZoneAction};

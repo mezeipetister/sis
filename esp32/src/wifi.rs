@@ -1,14 +1,12 @@
-use std::{future, thread, time::Duration};
+use std::{thread, time::Duration};
 
 use crossbeam::{
     channel::{Receiver, Sender},
     select,
 };
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
     hal::task::block_on,
-    timer::EspTaskTimerService,
-    wifi::{AsyncWifi, AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi},
+    wifi::{AsyncWifi, AuthMethod, ClientConfiguration, Configuration, EspWifi},
 };
 use log::{info, warn};
 
@@ -16,10 +14,10 @@ use crate::{BoardEvent, PASSWORD, SSID};
 
 pub struct WifiModule {
     wifi: AsyncWifi<EspWifi<'static>>,
-    inited: bool,
     tx: Sender<BoardEvent>,
     rx: Receiver<WifiCommand>,
-    is_online: bool,
+    connected: bool,
+    connecting: bool,
 }
 
 impl WifiModule {
@@ -35,8 +33,8 @@ impl WifiModule {
                 wifi,
                 tx,
                 rx,
-                is_online: false,
-                inited: false,
+                connected: false,
+                connecting: false,
             },
             module_tx,
         ))
@@ -50,78 +48,104 @@ impl WifiModule {
     // sets the configuration on the wifi instance, starts the wifi,
     // and waits for the network interface to be up.
     async fn connect_wifi(&mut self) -> anyhow::Result<()> {
-        if !self.inited {
-            let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
-                ssid: SSID.try_into().unwrap(),
-                bssid: None,
-                auth_method: AuthMethod::WPA2Personal,
-                password: PASSWORD.try_into().unwrap(),
-                channel: None,
-                ..Default::default()
-            });
-
-            self.wifi.set_configuration(&wifi_configuration)?;
-
-            self.wifi.start().await?;
-            info!("Wifi started");
-            self.inited = true;
+        // Check if already connected
+        if self.wifi.is_connected().is_ok() {
+            info!("Already connected to WiFi");
+            return Ok(());
         }
+
+        self.connecting = true;
+        self.connected = false;
+
+        // Disconnect if already connected
+        if let Ok(is_connected) = self.wifi.is_connected() {
+            if is_connected {
+                info!("Already connected to WiFi. Disconnecting...");
+                self.wifi.disconnect().await?;
+                self.wifi.stop().await?;
+                return Ok(());
+            }
+        }
+
+        info!("Connecting to WiFi...");
+        let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
+            ssid: SSID.try_into().unwrap(),
+            bssid: None,
+            auth_method: AuthMethod::WPA2Personal,
+            password: PASSWORD.try_into().unwrap(),
+            channel: None,
+            ..Default::default()
+        });
+
+        self.wifi.set_configuration(&wifi_configuration)?;
+
+        self.wifi.start().await?;
+        info!("Wifi started");
 
         self.wifi.connect().await?;
         info!("Wifi connected");
 
+        self.connecting = false;
+
         self.wifi.wait_netif_up().await?;
         info!("Wifi netif up");
+
+        self.connected = true;
 
         Ok(())
     }
 
     pub fn start(mut self) {
         // Start the WiFi connection process
-        block_on(self.connect_wifi());
-
-        let mut connecting = false;
+        let _ = block_on(self.connect_wifi());
 
         thread::Builder::new()
             .name("schedule_module".into())
             .stack_size(8192) // vagy próbáld: 8192 vagy 16384
-            .spawn(move || loop {
-                select! {
-                    recv(self.rx) -> msg => {
-                        match msg {
-                            Ok(WifiCommand::Connect) => {
-                                info!("Received Wifi connect command");
-                                if !connecting {
-                                    connecting = true;
-                                    let _ = block_on(self.connect_wifi());
-                                    connecting = false;
-                                }
-                            }
-                            Err(_) => {
-                                warn!("Wifi command channel closed");
-                                break;
+            .spawn(move || {
+                self.run();
+            })
+            .expect("Failed to spawn schedule thread");
+    }
+
+    fn run(mut self) {
+        loop {
+            select! {
+                recv(self.rx) -> msg => {
+                    match msg {
+                        Ok(WifiCommand::Connect) => {
+                            info!("Received Wifi connect command");
+                            if !self.connecting {
+                                let _ = block_on(self.connect_wifi());
+                                // Ensure we reset the connecting state in case of error
+                                self.connecting = false;
                             }
                         }
-                    }
-
-                    default(Duration::from_secs(5)) => {
-                        // Periodikus ellenőrzés
-                        let is_connected = self.wifi.is_connected().unwrap_or(false);
-                        if !is_connected {
-                            warn!("WiFi disconnected!");
-                            let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: false });
-                            self.is_online = false;
-                        } else {
-                            info!("WiFi OK");
-                            if !self.is_online {
-                                self.is_online = true;
-                                let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: true });
-                                info!("WiFi connected!");
-                            }
+                        Err(_) => {
+                            warn!("Wifi command channel closed");
+                            break;
                         }
                     }
                 }
-            }).expect("Failed to spawn schedule thread");
+
+                default(Duration::from_secs(5)) => {
+                    // Periodikus ellenőrzés
+                    let is_connected = self.wifi.is_connected().unwrap_or(false);
+                    if !is_connected {
+                        warn!("WiFi disconnected!");
+                        self.connected = false;
+                        let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: false });
+                    } else {
+                        info!("WiFi OK");
+                        if !self.connected {
+                            self.connected = true;
+                            let _ = self.tx.send(BoardEvent::WifiStatusChanged { connected: true });
+                            info!("WiFi connected!");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -32,7 +32,7 @@ impl ScheduleModule {
         let next_program_opt = None;
         let wait_duration = Duration::from_secs(0);
 
-        let nvs = EspNvs::new(esp_partition, "storage", true).unwrap();
+        let nvs = EspNvs::new(esp_partition, "storage", true).expect("Failed to create NVS");
 
         let mut res = Self {
             rx,
@@ -43,14 +43,13 @@ impl ScheduleModule {
             nvs,
         };
 
-        res.load_schedule_from_nvs().unwrap();
+        res.load_schedule_from_nvs()
+            .expect("Failed to load schedule from NVS");
 
         if let Some(schedule) = &res.schedule {
-            res.tx
-                .send(BoardEvent::ScheduleLoaded {
-                    version: schedule.version,
-                })
-                .ok();
+            let _ = res.tx.send(BoardEvent::ScheduleLoaded {
+                version: schedule.version,
+            });
         } else {
             info!("No schedule found in NVS.");
         }
@@ -74,7 +73,7 @@ impl ScheduleModule {
     pub fn start(self) {
         thread::Builder::new()
             .name("schedule_module".into())
-            .stack_size(4096) // vagy próbáld: 8192 vagy 16384
+            .stack_size(8192)
             .spawn(move || {
                 self.run();
             })
@@ -114,7 +113,7 @@ impl ScheduleModule {
                             // Recalculate the next program
                             self.set_next_program();
 
-                            self.tx.send(BoardEvent::ScheduleUpdated { version: self.schedule.clone().unwrap_or_default().version }).ok();
+                            let _ = self.tx.send(BoardEvent::ScheduleUpdated { version: self.schedule.clone().unwrap_or_default().version });
                         }
 
                         Ok(ScheduleCommand::StartProgramById(id)) => {
@@ -124,7 +123,7 @@ impl ScheduleModule {
                                     .iter()
                                     .find(|p| p.id == id)
                                 {
-                                    self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() }).ok();
+                                    let _ = self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() });
                                     info!("Program started by ID: {}", id);
 
                                 } else {
@@ -144,7 +143,7 @@ impl ScheduleModule {
 
                 recv(timer_rx) -> _ => {
                     if let Some(prog) = next_prog_opt.as_ref() {
-                        self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() }).ok();
+                        let _ = self.tx.send(BoardEvent::ProgramStarted { program: prog.clone() });
                         self.set_next_program();
                         info!("Program started automatically.");
                     }

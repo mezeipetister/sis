@@ -11,7 +11,6 @@ use esp_idf_svc::{
         FrameType,
     },
 };
-use esp_idf_sys::EspError;
 use log::info;
 use std::thread;
 use std::time::Duration;
@@ -23,30 +22,40 @@ pub struct WsModule {
     token: String,
     tx: Sender<BoardEvent>,
     rx: Receiver<WsCommand>,
+    client: Option<EspWebSocketClient<'static>>,
+    connecting: bool,
 }
 
 impl WsModule {
     pub fn new(url: String, token: String, tx: Sender<BoardEvent>) -> (Self, Sender<WsCommand>) {
         let (module_tx, rx) = crossbeam::channel::unbounded::<WsCommand>();
-        (WsModule { url, token, tx, rx }, module_tx)
+        (
+            WsModule {
+                url,
+                token,
+                tx,
+                rx,
+                client: None,
+                connecting: false,
+            },
+            module_tx,
+        )
     }
 
     /// Start the WebSocket client
     /// bg loop
-    pub fn start(self) {
-        let mut client = connect_ws_with_token(&self.url, &self.token, self.tx.clone()).unwrap();
+    pub fn start(mut self) {
+        // Try to connect to the WebSocket server
+        // let _ = self.connect_ws_with_token();
 
         // Message buffer
         let mut buffer: Vec<BoardInfo> = Vec::new();
-
-        // Connection state
-        let mut connected = false;
 
         info!("WebSocket client connected");
 
         thread::Builder::new()
             .name("schedule_module".into())
-            .stack_size(4096) // vagy próbáld: 8192 vagy 16384
+            .stack_size(8192)
             .spawn(move || loop {
             select! {
                 recv(self.rx) -> msg => {
@@ -55,17 +64,21 @@ impl WsModule {
                             match cmd {
                                 WsCommand::NewBoardInfo(new_info) => {
                                     if let Ok(data) = serde_json::to_string(&new_info) {
-                                        if client.is_connected() && connected {
-                                            info!("Sending updated BoardInfo: {}", data);
-                                            if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
-                                                info!("BoardInfo sent successfully");
+                                        if let Some(client) = &mut self.client {
+                                            if client.is_connected() {
+                                                if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
+                                                    info!("BoardInfo sent successfully");
+                                                } else {
+                                                    buffer.push(new_info);
+                                                    info!("Failed to send BoardInfo, buffering it");
+                                                }
                                             } else {
                                                 buffer.push(new_info);
-                                                info!("Failed to send BoardInfo, WebSocket client is not connected");
+                                                info!("WebSocket client is not connected, buffering BoardInfo");
                                             }
                                         } else {
-                                            info!("WebSocket client is not connected, cannot send BoardInfo");
                                             buffer.push(new_info);
+                                            info!("WebSocket client is None, buffering BoardInfo");
                                         }
                                     } else {
                                         info!("Failed to serialize BoardInfo to JSON");
@@ -74,25 +87,27 @@ impl WsModule {
                                 WsCommand::Connect => {
                                     // Optionally handle reconnect logic here
                                     info!("Received Connect command");
-                                    if !client.is_connected() {
-                                        info!("WebSocket client is not connected, attempting to reconnect");
-                                        client = connect_ws_with_token(&self.url, &self.token, self.tx.clone()).unwrap();
-                                        info!("WebSocket client reconnected");
-                                    } else {
-                                        info!("WebSocket client is already connected");
-                                    }
+                                    info!("WebSocket client is not connected, attempting to reconnect");
+                                    let _ = self.connect_ws_with_token();
                                 }
                                 WsCommand::Connected => {
-                                    connected = true;
                                     if !buffer.is_empty() {
                                         let drained: Vec<_> = buffer.drain(..).collect();
                                         for info in drained {
                                             if let Ok(data) = serde_json::to_string(&info) {
-                                                if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
-                                                    info!("Buffered BoardInfo sent successfully");
+                                                if let Some(client) = &mut self.client {
+                                                    if client.is_connected() {
+                                                        if let Ok(()) = client.send(FrameType::Text(false), data.as_bytes()) {
+                                                            info!("Buffered BoardInfo sent successfully");
+                                                        } else {
+                                                            info!("Failed to send buffered BoardInfo, will retry later");
+                                                        }
+                                                    } else {
+                                                        info!("WebSocket client is not connected, will retry sending buffered BoardInfo later");
+                                                        buffer.push(info); // Re-buffer if not connected
+                                                    }
                                                 } else {
-                                                    buffer.push(info);
-                                                    info!("Failed to send buffered BoardInfo, still not connected");
+                                                    info!("WebSocket client is None, cannot send buffered BoardInfo");
                                                 }
                                             } else {
                                                 info!("Failed to serialize buffered BoardInfo to JSON");
@@ -102,7 +117,8 @@ impl WsModule {
                                     info!("WebSocket client is connected");
                                 }
                                 WsCommand::Disconnected => {
-                                    connected = false;
+                                    self.client = None;
+                                    self.connecting = false;
                                     info!("WebSocket client is disconnected");
                                 }
                             }
@@ -113,38 +129,67 @@ impl WsModule {
                         }
                     }
                 }
-                // default(Duration::from_secs(5)) => {
-                //     // Periodic check
-                //     if !client.is_connected() {
-                //         info!("WebSocket client is not connected, attempting to reconnect");
-                //     }
-                // }
+                default(Duration::from_secs(3)) => {
+                    if let Some(client) = &mut self.client {
+                        if !client.is_connected() && !self.connecting {
+                            let _ = self.tx.send(BoardEvent::WsStatusChanged { connected: false });
+                        }
+                    } else if !self.connecting {
+                        let _ = self.tx.send(BoardEvent::WsStatusChanged { connected: false });
+                    }
+                }
             }
         })
             .expect("Failed to spawn schedule thread");
     }
-}
 
-fn connect_ws_with_token(
-    url: &str,
-    token: &str,
-    tx: Sender<BoardEvent>,
-) -> Result<EspWebSocketClient<'static>, EspError> {
-    let headers = format!("auth_token: {}\r\n", token);
+    fn connect_ws_with_token(&mut self) -> Result<(), EspIOError> {
+        if self.connecting {
+            info!("WebSocket client is already connecting, skipping new connection attempt");
+            return Ok(());
+        }
 
-    // Connect websocket
-    let config = EspWebSocketClientConfig {
-        headers: Some(&headers),
-        ..Default::default()
-    };
+        self.client = None; // Reset client before connecting
 
-    let timeout = Duration::from_secs(10);
+        self.connecting = true;
 
-    let client =
-        EspWebSocketClient::new(url, &config, timeout, move |event| handle_event(&tx, event))
-            .unwrap();
+        let headers = format!("auth_token: {}\r\n", &self.token);
 
-    Ok(client)
+        // Connect websocket
+        let config = EspWebSocketClientConfig {
+            headers: Some(&headers),
+            ..Default::default()
+        };
+
+        let timeout = Duration::from_secs(10);
+
+        let tx_clone = self.tx.clone();
+
+        let client = EspWebSocketClient::new(&self.url, &config, timeout, move |event| {
+            handle_event(&tx_clone, event)
+        });
+
+        match client {
+            Ok(client) => {
+                info!("WebSocket client connected successfully");
+                self.client = Some(client);
+                self.connecting = false;
+                let _ = self
+                    .tx
+                    .send(BoardEvent::WsStatusChanged { connected: true });
+                Ok(())
+            }
+            Err(e) => {
+                info!("Failed to connect WebSocket client: {}", e);
+                self.connecting = false;
+                self.client = None;
+                let _ = self
+                    .tx
+                    .send(BoardEvent::WsStatusChanged { connected: false });
+                Err(e)
+            }
+        }
+    }
 }
 
 pub enum WsCommand {
@@ -165,23 +210,19 @@ fn handle_event(tx: &Sender<BoardEvent>, event: &Result<WebSocketEvent, EspIOErr
             }
             WebSocketEventType::Connected => {
                 info!("Websocket connected");
-                tx.send(BoardEvent::WsStatusChanged { connected: true })
-                    .ok();
+                let _ = tx.send(BoardEvent::WsStatusChanged { connected: true });
             }
             WebSocketEventType::Disconnected => {
                 info!("Websocket disconnected");
-                tx.send(BoardEvent::WsStatusChanged { connected: false })
-                    .ok();
+                let _ = tx.send(BoardEvent::WsStatusChanged { connected: false });
             }
             WebSocketEventType::Close(reason) => {
                 info!("Websocket close, reason: {reason:?}");
-                tx.send(BoardEvent::WsStatusChanged { connected: false })
-                    .ok();
+                let _ = tx.send(BoardEvent::WsStatusChanged { connected: false });
             }
             WebSocketEventType::Closed => {
                 info!("Websocket closed");
-                tx.send(BoardEvent::WsStatusChanged { connected: false })
-                    .ok();
+                let _ = tx.send(BoardEvent::WsStatusChanged { connected: false });
             }
             WebSocketEventType::Text(chunk) => {
                 let buffer = TEXT_BUFFER.get_or_init(|| std::sync::Mutex::new(String::new()));

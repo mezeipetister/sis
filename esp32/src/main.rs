@@ -346,9 +346,7 @@ fn main() -> anyhow::Result<()> {
                 // Try to apply the event to the boardinfo
                 // and send the updated boardinfo to the WebSocket
                 if let Some(updated_boardinfo) = boardinfo.apply_event(&event) {
-                    ws_tx
-                        .send(ws::WsCommand::NewBoardInfo(updated_boardinfo))
-                        .unwrap();
+                    let _ = ws_tx.send(ws::WsCommand::NewBoardInfo(updated_boardinfo));
                 }
 
                 // info!("Received BoardEvent: {:?}", event);
@@ -364,23 +362,21 @@ fn main() -> anyhow::Result<()> {
                         // Send connect command if not connected to WS process
                         if !connected {
                             // Report WebSocket disconnection
-                            ws_tx.send(ws::WsCommand::Disconnected).unwrap();
+                            let _ = ws_tx.send(ws::WsCommand::Disconnected);
                             // Attempt to reconnect
-                            ws_tx.send(ws::WsCommand::Connect).unwrap();
+                            let _ = ws_tx.send(ws::WsCommand::Connect);
                             info!("WebSocket client not connected, attempting to reconnect");
                         } else {
                             // Report WebSocket connection
-                            ws_tx.send(ws::WsCommand::Connected).unwrap();
+                            let _ = ws_tx.send(ws::WsCommand::Connected);
                             // Send the current BoardInfo to WebSocket
-                            ws_tx
-                                .send(ws::WsCommand::NewBoardInfo(boardinfo.clone()))
-                                .unwrap();
+                            let _ = ws_tx.send(ws::WsCommand::NewBoardInfo(boardinfo.clone()));
                         }
                     }
                     BoardEvent::WifiStatusChanged { connected: status } => {
                         info!("WiFi status changed: status={}", status);
                         if !status {
-                            wifi_tx.send(wifi::WifiCommand::Connect).unwrap();
+                            let _ = wifi_tx.send(wifi::WifiCommand::Connect);
                             info!("WiFi client not connected, attempting to reconnect");
                         } else {
                             info!("WiFi client connected");
@@ -391,25 +387,23 @@ fn main() -> anyhow::Result<()> {
                         match command {
                             ServerCommand::SetNewSchedule(schedule) => {
                                 info!("New schedule received: version={}", schedule.version);
-                                schedule_tx
-                                    .send(schedule::ScheduleCommand::UpdateSchedule(schedule))
-                                    .unwrap();
+                                let _ = schedule_tx
+                                    .send(schedule::ScheduleCommand::UpdateSchedule(schedule));
                             }
                             ServerCommand::Stop => {
                                 info!("Stop command received");
-                                relay_tx.send(relay::RelayCommand::Stop).unwrap();
+                                let _ = relay_tx.send(relay::RelayCommand::Stop);
                             }
                             ServerCommand::StartZoneAction(zone_action) => {
                                 info!("StartZoneAction command received: {:?}", zone_action);
-                                relay_tx
-                                    .send(relay::RelayCommand::StartZoneAction(zone_action.clone()))
-                                    .unwrap();
+                                let _ = relay_tx.send(relay::RelayCommand::StartZoneAction(
+                                    zone_action.clone(),
+                                ));
                             }
                             ServerCommand::StartProgram(program_id) => {
                                 info!("StartProgram command received: {}", program_id);
-                                schedule_tx
-                                    .send(schedule::ScheduleCommand::StartProgramById(program_id))
-                                    .unwrap();
+                                let _ = schedule_tx
+                                    .send(schedule::ScheduleCommand::StartProgramById(program_id));
                             }
                         }
                     }
@@ -417,9 +411,7 @@ fn main() -> anyhow::Result<()> {
                     BoardEvent::ScheduleLoaded { version: _ } => (),
                     BoardEvent::ProgramStarted { program } => {
                         info!("Program started: {}", program.name);
-                        relay_tx
-                            .send(relay::RelayCommand::StartProgram(program.clone()))
-                            .unwrap();
+                        let _ = relay_tx.send(relay::RelayCommand::StartProgram(program.clone()));
                     }
                     BoardEvent::ProgramRunning { program: _ } => (),
                     BoardEvent::ProgramStopped => (),

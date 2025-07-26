@@ -3,14 +3,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::{BoardEvent, Program, ZoneAction};
 use crossbeam::{
     channel::{Receiver, Sender},
     select,
 };
 use esp_idf_svc::hal::gpio::{AnyIOPin, Output, Pin, PinDriver};
 use log::info;
-
-use crate::{BoardEvent, Program, ZoneAction};
 
 pub trait RelayPin: Send {
     fn set_high(&mut self);
@@ -111,12 +110,6 @@ pub struct RelayModule {
 }
 
 impl RelayModule {
-    pub fn start(self) {
-        thread::spawn(move || {
-            self.run();
-        });
-    }
-
     pub fn new(
         relay_controller: RelayController,
         tx: Sender<BoardEvent>,
@@ -132,6 +125,16 @@ impl RelayModule {
         )
     }
 
+    pub fn start(self) {
+        thread::Builder::new()
+            .name("schedule_module".into())
+            .stack_size(8192)
+            .spawn(move || {
+                self.run();
+            })
+            .expect("Failed to spawn relay module thread");
+    }
+
     pub fn run(mut self) {
         let mut current_zone_index: Option<usize> = None;
         let mut current_program: Option<Program> = None;
@@ -142,16 +145,23 @@ impl RelayModule {
                 recv(self.rx) -> msg => {
                     match msg {
                         Ok(RelayCommand::Stop) => {
+                            // Stop all relays and programs
+                            info!("Stopping all relays and programs");
                             self.relay_controller.close_all();
-                            self.tx.send(BoardEvent::ProgramStopped).ok();
-                            self.tx.send(BoardEvent::ZoneActionStopped).ok();
+                            // Notify program stopped
+                            let _ = self.tx.send(BoardEvent::ProgramStopped);
+                            // Notify zone action stopped
+                            let _ = self.tx.send(BoardEvent::ZoneActionStopped);
+                            // Reset state
                             current_zone_index = None;
                             current_program = None;
                             zone_start_time = None;
                         },
                         Ok(RelayCommand::StartZoneAction(zone)) => {
-                            self.tx.send(BoardEvent::ZoneActionStarted { zone_action: zone.clone() }).ok();
                             self.relay_controller.open(zone.zone_ids.clone());
+                            // Send board action started event
+                            let _ = self.tx.send(BoardEvent::ZoneActionStarted { zone_action: zone.clone() });
+                            // Reset current program and zone index
                             zone_start_time = Some(Instant::now());
                             current_zone_index = Some(0);
                             current_program = Some(Program {
@@ -164,11 +174,12 @@ impl RelayModule {
                             });
                         },
                         Ok(RelayCommand::StartProgram(prog)) => {
-                            self.tx.send(BoardEvent::ProgramRunning { program: prog.clone() }).ok();
+                            // Notify program running
+                            let _ = self.tx.send(BoardEvent::ProgramRunning { program: prog.clone() });
 
                             // Open the first zone of the program
                             if let Some(first_zone) = prog.zones.get(0) {
-                                self.tx.send(BoardEvent::ZoneActionStarted { zone_action: first_zone.clone() }).ok();
+                                let _ = self.tx.send(BoardEvent::ZoneActionStarted { zone_action: first_zone.clone() });
                                 self.relay_controller.open(first_zone.zone_ids.clone());
                             }
 
@@ -191,27 +202,19 @@ impl RelayModule {
 
                                 // Close all relays
                                 self.relay_controller.close_all();
-                                thread::sleep(Duration::from_millis(100));
 
-                                // Close all again to ensure
-                                self.relay_controller.close_all();
-                                thread::sleep(Duration::from_millis(100));
-
-                                // Close all again to ensure
-                                self.relay_controller.close_all();
-
-                                self.tx.send(BoardEvent::ZoneActionStopped).ok();
+                                let _ = self.tx.send(BoardEvent::ZoneActionStopped);
 
                                 let next_index = index + 1;
                                 if let Some(next_zone) = prog.zones.get(next_index) {
-                                    self.tx.send(BoardEvent::ZoneActionStarted {
+                                    let _ = self.tx.send(BoardEvent::ZoneActionStarted {
                                         zone_action: next_zone.clone(),
-                                    }).ok();
+                                    });
                                     self.relay_controller.open(next_zone.zone_ids.clone());
                                     current_zone_index = Some(next_index);
                                     zone_start_time = Some(Instant::now());
                                 } else {
-                                    self.tx.send(BoardEvent::ProgramStopped).ok();
+                                    let _ = self.tx.send(BoardEvent::ProgramStopped);
                                     current_program = None;
                                     current_zone_index = None;
                                     zone_start_time = None;
